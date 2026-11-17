@@ -8,3 +8,4 @@ export * from './insights';
 export * from './ai';
 export * from './importers';
 export * from './accounts';
+export * from './lang';

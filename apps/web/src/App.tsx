@@ -8,15 +8,16 @@ import { Market } from './pages/Market';
 import { Options } from './pages/Options';
 import { Settings } from './pages/Settings';
 import { Today } from './pages/Today';
-import { exitSample, useAppState } from './store';
+import { resolveLang, setLang, t, type MsgKey } from './i18n';
+import { exitSample, updateSettings, useAppState } from './store';
 
-const TABS = [
-  { path: '/', label: '今天' },
-  { path: '/holdings', label: '持仓' },
-  { path: '/market', label: '市场' },
-  { path: '/options', label: '期权' },
-  { path: '/ask', label: '问 AI' },
-] as const;
+const TABS: ReadonlyArray<{ path: string; label: MsgKey }> = [
+  { path: '/', label: 'nav.today' },
+  { path: '/holdings', label: 'nav.holdings' },
+  { path: '/market', label: 'nav.market' },
+  { path: '/options', label: 'nav.options' },
+  { path: '/ask', label: 'nav.ask' },
+];
 
 function useRoute(): string {
   const read = () => location.hash.replace(/^#/, '') || '/';
@@ -34,6 +35,8 @@ function useRoute(): string {
 
 export function App() {
   const s = useAppState();
+  const lang = resolveLang(s.settings.lang);
+  setLang(lang);
   const d = useDerived(s);
   const route = useRoute();
 
@@ -57,26 +60,30 @@ export function App() {
 
   return (
     <div className="shell">
-      <nav className="side" aria-label="主导航">
+      <nav className="side" aria-label={t('nav.main')}>
         <span className="brand">{APP_NAME}</span>
-        {TABS.map((t) => (
-          <a key={t.path} href={`#${t.path}`} className={`navlink ${active(t.path) ? 'active' : ''}`}>
-            {t.label}
+        {TABS.map((tab) => (
+          <a key={tab.path} href={`#${tab.path}`} className={`navlink ${active(tab.path) ? 'active' : ''}`}>
+            {t(tab.label)}
           </a>
         ))}
         <a href="#/settings" className={`navlink ${active('/settings') ? 'active' : ''}`}>
-          设置
+          {t('nav.settings')}
         </a>
         <span className="foot">
-          {s.market.fetchedAt ? `行情 ${timeLabel(s.market.fetchedAt)}` : '未接入行情'}
+          {s.market.fetchedAt ? t('foot.quotesAt', { t: timeLabel(s.market.fetchedAt) }) : t('foot.noQuotes')}
           <br />
-          数据只存在这个浏览器里
+          {t('foot.local')}
+          <br />
+          <button className="linkbtn" lang={lang === 'zh' ? 'en' : 'zh-CN'} onClick={() => updateSettings({ lang: lang === 'zh' ? 'en' : 'zh' })}>
+            {t('foot.switchLang')}
+          </button>
         </span>
       </nav>
       <main className="main">
         {s.isSample && route !== '/holdings/edit' ? (
           <div className="sample-bar" role="status">
-            <span>正在看示例数据（虚构持仓）</span>
+            <span>{t('sample.viewing')}</span>
             <span className="row" style={{ flexWrap: 'nowrap' }}>
               <button
                 className="btn small primary"
@@ -85,7 +92,7 @@ export function App() {
                   location.hash = '#/holdings/edit';
                 }}
               >
-                录入我的持仓
+                {t('sample.enter')}
               </button>
               <button
                 className="btn small"
@@ -94,17 +101,17 @@ export function App() {
                   location.hash = '#/';
                 }}
               >
-                退出示例
+                {t('sample.exit')}
               </button>
             </span>
           </div>
         ) : null}
         {page}
       </main>
-      <nav className="tabbar" aria-label="主导航">
-        {TABS.map((t) => (
-          <a key={t.path} href={`#${t.path}`} className={active(t.path) ? 'active' : ''}>
-            {t.label}
+      <nav className="tabbar" aria-label={t('nav.main')}>
+        {TABS.map((tab) => (
+          <a key={tab.path} href={`#${tab.path}`} className={active(tab.path) ? 'active' : ''}>
+            {t(tab.label)}
           </a>
         ))}
       </nav>

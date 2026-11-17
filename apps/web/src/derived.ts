@@ -15,10 +15,12 @@ import {
   totalCash,
   accountOf,
 } from 'portus-core';
+import { resolveLang } from './i18n';
 import type { AppState } from './store';
 
 /** 从状态算出各页要用的数据。全部来自 core 的纯函数。 */
 export function useDerived(s: AppState) {
+  const lang = resolveLang(s.settings.lang);
   return useMemo(() => {
     const ind = s.market.industries ?? {};
     // 风险和集中度永远按跨账户合并后的真实仓位算
@@ -41,17 +43,18 @@ export function useDerived(s: AppState) {
       concentration,
       over: concentration.filter((c) => c.over),
       risk,
-      alerts: riskAlerts(view, s.settings.rules),
+      alerts: riskAlerts(view, s.settings.rules, lang),
       sectors,
-      labels: sectorLabels(sectors),
-      headline: headline(view, sectors),
-      subline: subline(view),
-      watch: tomorrowWatch({ view, sectors, concentration, earnings: s.market.earnings }),
-      facts: attributionFacts(view, sectors, s.market.news),
+      labels: sectorLabels(sectors, lang),
+      headline: headline(view, sectors, lang),
+      subline: subline(view, lang),
+      watch: tomorrowWatch({ view, sectors, concentration, earnings: s.market.earnings, lang }),
+      facts: attributionFacts(view, sectors, s.market.news, lang),
+      lang,
       newsHeld: s.market.news.filter((n) => held.has(n.symbol)),
       hasQuotes: view.positions.some((p) => p.priceSource === 'quote'),
     };
-  }, [s.holdings, s.cashByAccount, s.market, s.settings.rules]);
+  }, [s.holdings, s.cashByAccount, s.market, s.settings.rules, lang]);
 }
 
 export type Derived = ReturnType<typeof useDerived>;

@@ -2,7 +2,8 @@
  * Anthropic 适配器：用用户自己的 key 从浏览器直接调用。
  * 需要 anthropic-dangerous-direct-browser-access 请求头；key 只发给 Anthropic，不经过任何其他服务器。
  */
-import { AI_SYSTEM_PROMPT, violatesAdvicePolicy } from 'portus-core';
+import { aiSystemPrompt, violatesAdvicePolicy } from 'portus-core';
+import { getLang, t } from '../i18n';
 
 export interface AiResult {
   text: string;
@@ -10,7 +11,12 @@ export interface AiResult {
   blocked: boolean;
 }
 
-export async function askClaude(key: string, model: string, messages: Array<{ role: 'user' | 'assistant'; content: string }>): Promise<AiResult> {
+export async function askClaude(
+  key: string,
+  model: string,
+  messages: Array<{ role: 'user' | 'assistant'; content: string }>,
+  opts: { system?: string; maxTokens?: number; checkAdvice?: boolean } = {},
+): Promise<AiResult> {
   let res: Response;
   try {
     res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -21,19 +27,19 @@ export async function askClaude(key: string, model: string, messages: Array<{ ro
         'anthropic-version': '2023-06-01',
         'anthropic-dangerous-direct-browser-access': 'true',
       },
-      body: JSON.stringify({ model, max_tokens: 800, system: AI_SYSTEM_PROMPT, messages }),
+      body: JSON.stringify({ model, max_tokens: opts.maxTokens ?? 800, system: opts.system ?? aiSystemPrompt(getLang()), messages }),
     });
   } catch {
-    throw new Error('连不上 Anthropic，检查网络后再试');
+    throw new Error(t('err.anthropicNet'));
   }
-  if (res.status === 401) throw new Error('Anthropic key 无效');
-  if (res.status === 404) throw new Error(`找不到模型 ${model}，在设置里换一个模型名`);
-  if (res.status === 429) throw new Error('Anthropic 请求太频繁，稍后再试');
-  if (!res.ok) throw new Error(`Anthropic 返回 ${res.status}`);
+  if (res.status === 401) throw new Error(t('err.anthropicKey'));
+  if (res.status === 404) throw new Error(t('err.model', { m: model }));
+  if (res.status === 429) throw new Error(t('err.anthropicRate'));
+  if (!res.ok) throw new Error(t('err.anthropicStatus', { s: res.status }));
   const data = (await res.json()) as { content?: Array<{ type: string; text?: string }> };
   const text = (data.content ?? []).filter((b) => b.type === 'text').map((b) => b.text ?? '').join('').trim();
-  if (violatesAdvicePolicy(text)) {
-    return { text: '这个回答里出现了买卖建议类的措辞，按产品规则不显示。这个工具只解释数据，不提供买卖建议。', blocked: true };
+  if (opts.checkAdvice !== false && violatesAdvicePolicy(text)) {
+    return { text: t('ai.blocked'), blocked: true };
   }
   return { text, blocked: false };
 }

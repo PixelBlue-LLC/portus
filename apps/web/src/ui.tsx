@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
-import type { ConcentrationResult, SectorPerf } from 'portus-core';
+import { nameIn, ruleLabel, type ConcentrationResult, type SectorPerf } from 'portus-core';
 import { signedPct, signedUsd } from './format';
+import { getLang, t } from './i18n';
 
 export function tone(v: number | null | undefined): string {
   if (v == null || v === 0) return '';
@@ -39,7 +40,10 @@ export function Tile({ label, value, sub, children }: { label: string; value: Re
 
 /** 一条集中度：数值条 + 阈值竖线 */
 export function ConcRow({ c }: { c: ConcentrationResult }) {
-  const name = c.subject ? `${c.label}（${c.subject}）` : c.label;
+  const lang = getLang();
+  const label = ruleLabel(c, lang);
+  const subject = c.subject ? nameIn(c.subject, lang) : '';
+  const name = subject ? (lang === 'zh' ? `${label}（${subject}）` : `${label} (${subject})`) : label;
   const okColor = 'var(--ok-bar)';
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -52,7 +56,7 @@ export function ConcRow({ c }: { c: ConcentrationResult }) {
           </span>
         </span>
       </div>
-      <div className="bar" role="img" aria-label={`${name} ${c.pct}%，阈值 ${c.limit}%`}>
+      <div className="bar" role="img" aria-label={t('conc.aria', { name, pct: c.pct, limit: c.limit })}>
         <i style={{ width: `${Math.min(100, c.pct)}%`, background: c.over ? undefined : okColor }} />
         <b style={{ left: `${Math.min(100, c.limit)}%` }} />
       </div>
@@ -62,7 +66,7 @@ export function ConcRow({ c }: { c: ConcentrationResult }) {
 
 /** 板块色块：跌越多颜色越深 */
 export function HeatGrid({ sectors, limit = 6 }: { sectors: SectorPerf[]; limit?: number }) {
-  if (!sectors.length) return <p className="muted" style={{ margin: 0, fontSize: 14 }}>接入行情后显示板块涨跌。</p>;
+  if (!sectors.length) return <p className="muted" style={{ margin: 0, fontSize: 14 }}>{t('heat.empty')}</p>;
   const pick = sectors.length > limit ? [...sectors.slice(0, limit / 2), ...sectors.slice(-limit / 2)] : sectors;
   const max = Math.max(...sectors.map((s) => Math.abs(s.changePct)), 1);
   return (
@@ -74,7 +78,7 @@ export function HeatGrid({ sectors, limit = 6 }: { sectors: SectorPerf[]; limit?
         return (
           <div key={s.symbol} style={{ background: `color-mix(in srgb, ${base} ${Math.round(a * 100)}%, var(--card))`, color: strong ? '#fff' : 'var(--ink)' }}>
             <span className="n">
-              {s.name} {s.symbol}
+              {nameIn(s.name, getLang())} {s.symbol}
             </span>
             <span className="v">{signedPct(s.changePct, 1)}</span>
           </div>

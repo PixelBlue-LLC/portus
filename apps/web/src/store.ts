@@ -1,4 +1,6 @@
 import { useSyncExternalStore } from 'react';
+import type { LangPref } from './i18n';
+import { t } from './i18n';
 import { DEFAULT_ACCOUNT, DEFAULT_RULES, type CashByAccount, type ConcentrationRule, type Holding, type NewsItem, type Quote, type SectorPerf } from 'portus-core';
 
 export type ThemePref = 'system' | 'light' | 'dark';
@@ -13,6 +15,8 @@ export interface Settings {
   rules: ConcentrationRule[];
   /** 多个账户时：merged = 同一只股票合成一条，split = 按账户分开 */
   accountView: 'merged' | 'split';
+  /** 界面语言；auto = 跟随浏览器 */
+  lang: LangPref;
 }
 
 export interface MarketCache {
@@ -45,6 +49,10 @@ export interface AppState {
   loading: boolean;
   /** 当前持仓是示例数据（虚构） */
   isSample?: boolean;
+  /** 新闻标题的中文机器翻译：原文 → 译文。只缓存在本地 */
+  translations?: Record<string, string>;
+  /** 正在翻译新闻 */
+  translating?: boolean;
 }
 
 const KEY = 'portus:v1';
@@ -78,6 +86,7 @@ export const DEFAULT_SETTINGS: Settings = {
   colorConvention: 'us',
   rules: DEFAULT_RULES,
   accountView: 'merged',
+  lang: 'auto',
 };
 
 const EMPTY_MARKET: MarketCache = { quotes: {}, sectors: [], news: [], earnings: {}, industries: {}, errors: [] };
@@ -115,7 +124,7 @@ const listeners = new Set<() => void>();
 
 function persist() {
   try {
-    const { loading: _loading, ...rest } = state;
+    const { loading: _loading, translating: _translating, ...rest } = state;
     localStorage.setItem(KEY, JSON.stringify(rest));
   } catch {
     // 隐私模式或存储已满时不影响使用，只是刷新后不保留
@@ -134,7 +143,11 @@ export function setState(patch: Partial<AppState> | ((s: AppState) => Partial<Ap
 }
 
 export function updateSettings(patch: Partial<Settings>) {
-  setState((s) => ({ settings: { ...s.settings, ...patch } }));
+  setState((s) => {
+    const settings = { ...s.settings, ...patch };
+    // AI 解读是按旧语言写的，换语言后作废
+    return patch.lang && patch.lang !== s.settings.lang ? { settings, attribution: undefined } : { settings };
+  });
 }
 
 export function useAppState(): AppState {
@@ -156,7 +169,7 @@ export function exportBackup(includeKeys: boolean): string {
 
 export function importBackup(text: string): void {
   const data = JSON.parse(text) as Partial<AppState> & { app?: string; cash?: number };
-  if (!BACKUP_APPS.includes(data.app ?? '') || !Array.isArray(data.holdings)) throw new Error('不是有效的备份文件');
+  if (!BACKUP_APPS.includes(data.app ?? '') || !Array.isArray(data.holdings)) throw new Error(t('err.backup'));
   setState((s) => ({
     holdings: data.holdings ?? [],
     cashByAccount: data.cashByAccount ?? (typeof data.cash === 'number' && data.cash > 0 ? { [DEFAULT_ACCOUNT]: data.cash } : {}),

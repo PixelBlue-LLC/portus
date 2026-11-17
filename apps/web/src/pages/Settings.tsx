@@ -1,8 +1,9 @@
 import { useRef, useState } from 'react';
-import { DEFAULT_RULES } from 'portus-core';
+import { DEFAULT_RULES, ruleLabel } from 'portus-core';
 import { refreshMarket } from '../actions';
 import { APP_NAME, REPO_URL } from '../brand';
 import { clearAll, exportBackup, importBackup, updateSettings, type AppState, type ThemePref } from '../store';
+import { getLang, t, type LangPref } from '../i18n';
 import { Card } from '../ui';
 
 export function Settings({ s }: { s: AppState }) {
@@ -22,59 +23,67 @@ export function Settings({ s }: { s: AppState }) {
   return (
     <>
       <header className="page-head">
-        <span className="title">设置</span>
+        <span className="title">{t('nav.settings')}</span>
       </header>
 
       <div className="grid2">
         <div className="col">
           <Card>
-            <h2>数据源</h2>
+            <h2>{t('set.sources')}</h2>
             <p className="body" style={{ margin: 0, fontSize: 14, lineHeight: 1.6 }}>
-              key 只存在这个浏览器里，请求从浏览器直接发给对应服务商。建议给 key 设用量上限。
+              {t('set.sourcesBody')}
             </p>
             <label className="field">
               <span>
-                Finnhub key（行情、新闻、财报日历）·{' '}
+                {t('set.finnhub')} ·{' '}
                 <a href="https://finnhub.io/register" target="_blank" rel="noreferrer">
-                  免费注册
+                  {t('set.register')}
                 </a>
               </span>
               <input className="input" type="password" autoComplete="off" value={st.finnhubKey} onChange={(e) => updateSettings({ finnhubKey: e.target.value.trim() })} />
             </label>
             <label className="field">
               <span>
-                Anthropic key（AI 解读和问答）·{' '}
+                {t('set.anthropic')} ·{' '}
                 <a href="https://console.anthropic.com/" target="_blank" rel="noreferrer">
-                  获取
+                  {t('set.get')}
                 </a>
               </span>
               <input className="input" type="password" autoComplete="off" value={st.anthropicKey} onChange={(e) => updateSettings({ anthropicKey: e.target.value.trim() })} />
             </label>
             <label className="field">
-              <span>AI 模型</span>
+              <span>{t('set.model')}</span>
               <input className="input" value={st.aiModel} onChange={(e) => updateSettings({ aiModel: e.target.value.trim() })} />
             </label>
-            <button className="btn" disabled={!st.finnhubKey || s.loading} onClick={() => void refreshMarket().then(() => setMsg('已刷新行情'))} style={{ alignSelf: 'flex-start' }}>
-              {s.loading ? '刷新中…' : '测试并刷新行情'}
+            <button className="btn" disabled={!st.finnhubKey || s.loading} onClick={() => void refreshMarket().then(() => setMsg(t('set.refreshed')))} style={{ alignSelf: 'flex-start' }}>
+              {s.loading ? t('common.refreshing') : t('set.test')}
             </button>
-            {s.market.errors.length ? <div className="banner bad">{s.market.errors.join('；')}</div> : null}
+            {s.market.errors.length ? <div className="banner bad">{s.market.errors.join(t('common.sep'))}</div> : null}
           </Card>
 
           <Card>
-            <h2>显示</h2>
+            <h2>{t('set.display')}</h2>
             <label className="field">
-              <span>深浅色</span>
-              <select className="input" value={st.theme} onChange={(e) => updateSettings({ theme: e.target.value as ThemePref })}>
-                <option value="system">跟随系统</option>
-                <option value="light">浅色</option>
-                <option value="dark">深色</option>
+              <span>{t('set.language')}</span>
+              <select className="input" value={st.lang} onChange={(e) => updateSettings({ lang: e.target.value as LangPref })}>
+                <option value="auto">{t('set.langAuto')}</option>
+                <option value="zh">中文</option>
+                <option value="en">English</option>
               </select>
             </label>
             <label className="field">
-              <span>涨跌颜色</span>
+              <span>{t('set.theme')}</span>
+              <select className="input" value={st.theme} onChange={(e) => updateSettings({ theme: e.target.value as ThemePref })}>
+                <option value="system">{t('set.themeSystem')}</option>
+                <option value="light">{t('set.light')}</option>
+                <option value="dark">{t('set.dark')}</option>
+              </select>
+            </label>
+            <label className="field">
+              <span>{t('set.colors')}</span>
               <select className="input" value={st.colorConvention} onChange={(e) => updateSettings({ colorConvention: e.target.value as 'us' | 'cn' })}>
-                <option value="us">绿涨红跌</option>
-                <option value="cn">红涨绿跌</option>
+                <option value="us">{t('set.us')}</option>
+                <option value="cn">{t('set.cn')}</option>
               </select>
             </label>
           </Card>
@@ -83,16 +92,16 @@ export function Settings({ s }: { s: AppState }) {
         <div className="col">
           <Card>
             <div className="card-head">
-              <h2>集中度阈值</h2>
+              <h2>{t('set.rules')}</h2>
               <button className="linkbtn" onClick={() => updateSettings({ rules: DEFAULT_RULES })}>
-                恢复默认
+                {t('set.reset')}
               </button>
             </div>
             {st.rules.map((r, i) => (
               <label key={r.type + r.label} className="field" style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
                 <span>
-                  {r.label}
-                  {r.type === 'cash_min' ? '（下限）' : ''}
+                  {ruleLabel(r, getLang())}
+                  {r.type === 'cash_min' ? t('set.floor') : ''}
                 </span>
                 <span className="row" style={{ flexWrap: 'nowrap' }}>
                   <input
@@ -113,24 +122,24 @@ export function Settings({ s }: { s: AppState }) {
           </Card>
 
           <Card>
-            <h2>数据</h2>
+            <h2>{t('set.data')}</h2>
             <p className="body" style={{ margin: 0, fontSize: 14, lineHeight: 1.6 }}>
-              持仓和设置都在这个浏览器的本地存储里。换浏览器或清理缓存前先导出备份。
+              {t('set.dataBody')}
             </p>
             <div className="row">
               <button className="btn small" onClick={() => download(false)}>
-                导出备份（不含 key）
+                {t('set.export')}
               </button>
               <button className="btn small" onClick={() => fileRef.current?.click()}>
-                导入备份
+                {t('set.import')}
               </button>
               <button
                 className="btn small"
                 onClick={() => {
-                  if (confirm('清除这个浏览器里的全部持仓、设置和 key？')) clearAll();
+                  if (confirm(t('set.clearConfirm'))) clearAll();
                 }}
               >
-                清除全部
+                {t('set.clearAll')}
               </button>
             </div>
             <input
@@ -143,9 +152,9 @@ export function Settings({ s }: { s: AppState }) {
                 if (!f) return;
                 try {
                   importBackup(await f.text());
-                  setMsg('已导入备份');
+                  setMsg(t('set.imported'));
                 } catch (err) {
-                  setMsg(err instanceof Error ? err.message : '导入失败');
+                  setMsg(err instanceof Error ? err.message : t('set.importFail'));
                 }
                 e.target.value = '';
               }}
@@ -154,11 +163,11 @@ export function Settings({ s }: { s: AppState }) {
           </Card>
 
           <div className="notice">
-            {APP_NAME} 是开源的研究工具，不是投资建议，不连接券商、不下单，也不收集你的数据。源代码在{' '}
+            {t('set.notice1', { app: APP_NAME })}
             <a href={REPO_URL} target="_blank" rel="noreferrer">
               GitHub
             </a>
-            。
+            {t('set.notice2')}
           </div>
         </div>
       </div>

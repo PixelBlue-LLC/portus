@@ -34,6 +34,6 @@ npm run build
 
 - 改了 `core` 的函数要同步测试。测试里别用真实「今天」，固定日期。
 - 界面跟随系统深浅色（CSS 变量在 `styles.css`），涨跌颜色可切换（`.pos` / `.neg`）。
-- 界面文字目前是中文；README 中英双语。要不要做多语言还没定。
+- 界面中英双语（2026-11-17）：默认跟随浏览器，设置页和侧栏可切。页面文字全部写在 `apps/web/src/i18n.ts`，每条是 `[中文, English]`，新加文字必须两种都写（`apps/web/test/i18n.test.ts` 会查）。core 里拼句子的函数最后一个参数是 `lang`；主题、行业、规则名在数据里仍用中文做键，显示时用 `nameIn` / `ruleLabel` 翻译。中文界面下新闻标题用用户自己的 Anthropic key 翻译，只缓存在本地，标「机器翻译」。README 中英双语。
 - 提交作者：`Jianxiao Cai <93627186+ShawnCai223@users.noreply.github.com>`（以后是公开仓库）。
 - 条款和隐私是模板草稿（`docs/TERMS.md`、`docs/PRIVACY.md`），开始收费前请律师看一遍。

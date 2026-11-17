@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { attributionFallback } from 'portus-core';
+import { attributionFallback, riskBandName } from 'portus-core';
 import { refreshMarket, runAttribution } from '../actions';
 import type { Derived } from '../derived';
 import { ageMinutes, signedPct, signedUsd, timeLabel, usd } from '../format';
+import { getLang, t } from '../i18n';
 import { loadSample, type AppState } from '../store';
 import { Card, ConcRow, HeatGrid, Money, Pct, Tile, tone } from '../ui';
 
@@ -22,29 +23,29 @@ export function Today({ s, d }: { s: AppState; d: Derived }) {
     <>
       <header className="page-head">
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          <span className="title">今天</span>
+          <span className="title">{t('nav.today')}</span>
           <span className="label">
-            {s.market.fetchedAt ? `行情 ${timeLabel(s.market.fetchedAt)} 更新` : '还没有接入行情，价格为手动填写'}
+            {s.market.fetchedAt ? t('today.quotesUpdated', { t: timeLabel(s.market.fetchedAt) }) : t('today.manualPrices')}
           </span>
         </div>
         <div className="row" style={{ flexWrap: 'nowrap' }}>
           {s.settings.finnhubKey ? (
             <button className="btn" onClick={() => void refreshMarket()} disabled={s.loading}>
-              {s.loading ? '刷新中…' : '刷新'}
+              {s.loading ? t('common.refreshing') : t('common.refresh')}
             </button>
           ) : (
             <a className="btn" href="#/settings">
-              接入行情
+              {t('common.connectData')}
             </a>
           )}
           <a className="btn mobile-only" href="#/settings">
-            设置
+            {t('nav.settings')}
           </a>
         </div>
       </header>
 
-      {stale ? <div className="banner bad">行情是 {timeLabel(s.market.fetchedAt)} 的，已经超过一天没更新。</div> : null}
-      {s.market.errors.length ? <div className="banner bad">{s.market.errors.join('；')}</div> : null}
+      {stale ? <div className="banner bad">{t('today.stale', { t: timeLabel(s.market.fetchedAt) })}</div> : null}
+      {s.market.errors.length ? <div className="banner bad">{s.market.errors.join(t('common.sep'))}</div> : null}
 
       <section className="sec">
         <h1 className="headline">{d.headline}</h1>
@@ -52,22 +53,22 @@ export function Today({ s, d }: { s: AppState; d: Derived }) {
       </section>
 
       <Card>
-        <span className="label">总市值</span>
+        <span className="label">{t('common.totalValue')}</span>
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
           <span className="big">{usd(view.totalValue, 2)}</span>
           <span style={{ fontSize: 15, fontWeight: 600 }}>
             {view.dayPnl != null ? (
               <span className={tone(view.dayPnl)}>
-                今日 {signedUsd(view.dayPnl, 2)} · {signedPct((view.dayPnl / (view.totalValue - view.dayPnl)) * 100)}
+                {t('today.dayLine', { usd: signedUsd(view.dayPnl, 2), pct: signedPct((view.dayPnl / (view.totalValue - view.dayPnl)) * 100) })}
               </span>
             ) : (
-              <span className="muted">今日涨跌需要行情</span>
+              <span className="muted">{t('today.needQuotes')}</span>
             )}
           </span>
         </div>
         {top3.length ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <span className="label">今天的{losing ? '亏损' : '盈利'}来自</span>
+            <span className="label">{t(losing ? 'today.lossFrom' : 'today.gainFrom')}</span>
             <div className="stack" aria-hidden="true">
               {top3.map((p, i) => (
                 <div key={p.symbol} style={{ flex: Math.abs(p.dayPnl!), background: losing ? 'var(--down)' : 'var(--up)', opacity: 1 - i * 0.22 }} />
@@ -80,47 +81,47 @@ export function Today({ s, d }: { s: AppState; d: Derived }) {
                   {p.symbol} {signedUsd(p.dayPnl!)}
                 </span>
               ))}
-              {rest > 0 ? <span>其他 {signedUsd(losing ? -rest : rest)}</span> : null}
+              {rest > 0 ? <span>{t('common.other')} {signedUsd(losing ? -rest : rest)}</span> : null}
             </div>
           </div>
         ) : null}
       </Card>
 
       <div className="tiles">
-        <Tile label="风险评分" value={<>{d.risk.score}<span className="label" style={{ fontWeight: 400 }}> / 100 {d.risk.band}</span></>}>
+        <Tile label={t('tile.risk')} value={<>{d.risk.score}<span className="label" style={{ fontWeight: 400 }}> / 100 {riskBandName(d.risk.band, getLang())}</span></>}>
           <div className="bar">
             <i style={{ width: `${d.risk.score}%` }} />
           </div>
         </Tile>
-        <Tile label="现金" value={`${view.totalValue ? ((view.cash / view.totalValue) * 100).toFixed(1) : '0'}%`} sub={usd(view.cash)} />
-        <Tile label="累计盈亏" value={<Money v={view.totalPnl} />} sub={`${view.positions.length} 只持仓`} />
-        <Tile label="集中度超标" value={`${d.over.length} 项`} sub={`共 ${d.concentration.length} 条规则`} />
+        <Tile label={t('common.cash')} value={`${view.totalValue ? ((view.cash / view.totalValue) * 100).toFixed(1) : '0'}%`} sub={usd(view.cash)} />
+        <Tile label={t('tile.totalPnl')} value={<Money v={view.totalPnl} />} sub={t('tile.positions', { n: view.positions.length })} />
+        <Tile label={t('tile.over')} value={t('tile.items', { n: d.over.length })} sub={t('tile.rules', { n: d.concentration.length })} />
       </div>
 
       <div className="grid2">
         <div className="col">
           <Card>
             <div className="card-head">
-              <h2>先看风险</h2>
+              <h2>{t('today.riskFirst')}</h2>
               <span className="label" style={{ color: d.over.length ? 'var(--warn-text)' : undefined, fontWeight: 600 }}>
-                {d.over.length ? `${d.over.length} 项超标` : '全部在阈值内'}
+                {d.over.length ? t('today.overN', { n: d.over.length }) : t('today.allWithin')}
               </span>
             </div>
             {(d.over.length ? d.over : d.concentration.slice(0, 3)).map((c) => (
               <ConcRow key={c.type + c.label} c={c} />
             ))}
             <a href="#/holdings" style={{ fontSize: 14 }}>
-              看全部持仓和规则 →
+              {t('today.seeAll')}
             </a>
           </Card>
 
           <Card>
             <div className="table">
               <div className="tr head">
-                <span>持仓</span>
-                <span>仓位</span>
-                <span>当日</span>
-                <span>今日 $</span>
+                <span>{t('th.holding')}</span>
+                <span>{t('th.weight')}</span>
+                <span>{t('th.day')}</span>
+                <span>{t('th.dayUsd')}</span>
               </div>
               {view.positions.map((p) => (
                 <div className="tr" key={p.symbol}>
@@ -140,12 +141,12 @@ export function Today({ s, d }: { s: AppState; d: Derived }) {
 
         <div className="col">
           <Card>
-            <h2>今天发生了什么</h2>
+            <h2>{t('today.what')}</h2>
             <Attribution s={s} d={d} />
           </Card>
 
           <Card>
-            <h2>明天看什么</h2>
+            <h2>{t('today.watch')}</h2>
             {d.watch.length ? (
               <ol className="list">
                 {d.watch.map((w) => (
@@ -153,15 +154,18 @@ export function Today({ s, d }: { s: AppState; d: Derived }) {
                 ))}
               </ol>
             ) : (
-              <p className="muted" style={{ margin: 0, fontSize: 14 }}>接入行情后，这里会列出需要留意的变化。</p>
+              <p className="muted" style={{ margin: 0, fontSize: 14 }}>{t('today.watchEmpty')}</p>
             )}
           </Card>
 
           <Card>
             <div className="card-head">
-              <h2>板块{d.labels.allDown ? ' · 全部下跌' : d.labels.allUp ? ' · 全部上涨' : ''}</h2>
+              <h2>
+                {t('today.sectors')}
+                {d.labels.allDown ? t('today.allDown') : d.labels.allUp ? t('today.allUp') : ''}
+              </h2>
               <a href="#/market" style={{ fontSize: 13 }}>
-                {d.newsHeld.length ? `新闻 ${d.newsHeld.length} 条 →` : '市场 →'}
+                {d.newsHeld.length ? t('today.newsN', { n: d.newsHeld.length }) : t('today.marketLink')}
               </a>
             </div>
             <HeatGrid sectors={d.sectors} />
@@ -175,8 +179,8 @@ export function Today({ s, d }: { s: AppState; d: Derived }) {
 function Attribution({ s, d }: { s: AppState; d: Derived }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
-  const fallback = attributionFallback(d.view, d.sectors);
-  if (!d.hasQuotes) return <p className="muted" style={{ margin: 0, fontSize: 14 }}>接入行情后，这里会说明今天的涨跌来自哪里。</p>;
+  const fallback = attributionFallback(d.view, d.sectors, d.lang);
+  if (!d.hasQuotes) return <p className="muted" style={{ margin: 0, fontSize: 14 }}>{t('attr.needQuotes')}</p>;
   return (
     <>
       {s.attribution ? (
@@ -207,13 +211,15 @@ function Attribution({ s, d }: { s: AppState; d: Derived }) {
               }
             }}
           >
-            {busy ? 'AI 解读中…' : s.attribution ? '重新解读' : '用 AI 解读'}
+            {busy ? t('attr.busy') : s.attribution ? t('attr.redo') : t('attr.run')}
           </button>
           {err ? <span className="neg" style={{ fontSize: 13 }}>{err}</span> : null}
         </div>
       ) : (
         <span className="label">
-          填写 Anthropic key 后可以用 AI 解读（<a href="#/settings">设置</a>）。只解释数据，不给买卖建议。
+          {t('attr.needKey1')}
+          <a href="#/settings">{t('nav.settings')}</a>
+          {t('attr.needKey2')}
         </span>
       )}
     </>
@@ -224,24 +230,24 @@ function Welcome() {
   return (
     <>
       <section className="sec" style={{ paddingTop: 24 }}>
-        <h1 className="headline">先录入你的持仓</h1>
+        <h1 className="headline">{t('welcome.title')}</h1>
         <p className="lead">
-          数据只存在这个浏览器里，不会上传。录入后可以看到仓位分布、集中度和风险评分；填了行情 key 还能看当天涨跌、板块和新闻。
+          {t('welcome.lead')}
         </p>
       </section>
       <div className="row" style={{ padding: '0 6px' }}>
         <a className="btn primary" href="#/holdings/edit">
-          录入持仓
+          {t('welcome.enter')}
         </a>
         <button
           className="btn"
           onClick={loadSample}
         >
-          用示例数据看看
+          {t('welcome.sample')}
         </button>
       </div>
       <div className="notice" style={{ margin: '8px 6px 0' }}>
-        这是研究工具，不是投资建议，不连接券商、不下单。示例数据是虚构的。
+        {t('welcome.notice')}
       </div>
     </>
   );

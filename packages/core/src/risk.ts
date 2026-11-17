@@ -1,4 +1,5 @@
-import { computeConcentration, DEFAULT_RULES, type ConcentrationRule, type ConcentrationResult } from './concentration';
+import { computeConcentration, DEFAULT_RULES, ruleLabel, type ConcentrationRule, type ConcentrationResult } from './concentration';
+import { nameIn, type Lang, type Level } from './lang';
 import { techExposure, themeBreakdown } from './portfolio';
 import type { PortfolioView } from './types';
 
@@ -39,6 +40,13 @@ export interface RiskScore {
 function ratioOver(pct: number, limit: number): number {
   if (limit <= 0) return 0;
   return Math.max(0, Math.min(1, pct / limit - 0.5));
+}
+
+const BAND_EN: Record<RiskBand, string> = { 低风险: 'Low risk', 中等风险: 'Moderate risk', 高风险: 'High risk', 极高风险: 'Very high risk' };
+
+/** 风险等级按语言显示（数据里存中文） */
+export function riskBandName(band: RiskBand, lang: Lang): string {
+  return lang === 'zh' ? band : BAND_EN[band];
 }
 
 export function riskBand(score: number): RiskBand {
@@ -87,7 +95,7 @@ export function portfolioRisk(view: PortfolioView, opts: { earningsSoon?: boolea
 }
 
 export interface Alert {
-  level: '高' | '中' | '低';
+  level: Level;
   rule: string;
   message: string;
 }
@@ -95,22 +103,32 @@ export interface Alert {
 export const DAY_MOVE_ALERT_PCT = 5;
 
 /** 风险提醒：集中度超标 + 单日大波动。只陈述事实，不给操作建议。 */
-export function riskAlerts(view: PortfolioView, rules: ConcentrationRule[] = DEFAULT_RULES): Alert[] {
+export function riskAlerts(view: PortfolioView, rules: ConcentrationRule[] = DEFAULT_RULES, lang: Lang = 'zh'): Alert[] {
+  const zh = lang === 'zh';
   const out: Alert[] = [];
   const conc: ConcentrationResult[] = computeConcentration(view, rules);
   for (const c of conc) {
     if (!c.over) continue;
     const high = c.type === 'single_max' || c.type === 'theme_max' || c.type === 'tech_total';
-    const name = c.subject ? `${c.label}（${c.subject}）` : c.label;
+    const label = ruleLabel(c, lang);
+    const subject = c.subject ? nameIn(c.subject, lang) : '';
+    const name = subject ? (zh ? `${label}（${subject}）` : `${label} (${subject})`) : label;
+    const below = c.direction === 'below';
     out.push({
       level: high ? '高' : '中',
       rule: name,
-      message: `当前 ${c.pct}%，${c.direction === 'below' ? '低于' : '超过'}阈值 ${c.limit}%。`,
+      message: zh
+        ? `当前 ${c.pct}%，${below ? '低于' : '超过'}阈值 ${c.limit}%。`
+        : `Now ${c.pct}%, ${below ? 'below' : 'above'} the ${c.limit}% limit.`,
     });
   }
   for (const p of view.positions) {
     if (p.dayPct != null && Math.abs(p.dayPct) >= DAY_MOVE_ALERT_PCT) {
-      out.push({ level: '中', rule: '单日波动超过 5%', message: `${p.symbol} 今天 ${fmtSigned(p.dayPct)}%。` });
+      out.push({
+        level: '中',
+        rule: zh ? `单日波动超过 ${DAY_MOVE_ALERT_PCT}%` : `Daily move over ${DAY_MOVE_ALERT_PCT}%`,
+        message: zh ? `${p.symbol} 今天 ${fmtSigned(p.dayPct)}%。` : `${p.symbol} ${fmtSigned(p.dayPct)}% today.`,
+      });
     }
   }
   const order = { 高: 0, 中: 1, 低: 2 } as const;

@@ -1,3 +1,4 @@
+import type { Lang } from './lang';
 import type { PortfolioView } from './types';
 
 export type ConcentrationRule =
@@ -18,6 +19,8 @@ export interface ConcentrationResult {
   /** cash_min 是「低于阈值才算问题」 */
   direction: 'above' | 'below';
   over: boolean;
+  /** top_n 的 n */
+  n?: number;
 }
 
 export const DEFAULT_RULES: ConcentrationRule[] = [
@@ -57,7 +60,7 @@ export function computeConcentration(view: PortfolioView, rules: ConcentrationRu
       }
       case 'top_n': {
         const pct = r1(weights.slice(0, rule.n).reduce((s, w) => s + w, 0));
-        return { ...base, pct, over: pct > rule.limit };
+        return { ...base, n: rule.n, pct, over: pct > rule.limit };
       }
       case 'theme_max':
       case 'sector_max': {
@@ -76,4 +79,26 @@ export function computeConcentration(view: PortfolioView, rules: ConcentrationRu
       }
     }
   });
+}
+
+/** 内置规则的中文默认名。用户改过名字的规则不翻译。 */
+const ZH_DEFAULT_LABELS = new Set(['单只最大仓位', '前两大持仓', '前三大持仓', '最大主题', '最大行业', '科技相关合计', '现金占比']);
+
+/** 规则名按语言显示 */
+export function ruleLabel(r: { type: ConcentrationRule['type']; label: string; n?: number }, lang: Lang): string {
+  if (lang === 'zh' || !ZH_DEFAULT_LABELS.has(r.label)) return r.label;
+  switch (r.type) {
+    case 'single_max':
+      return 'Largest single position';
+    case 'top_n':
+      return `Top ${r.n ?? (r.label.includes('三') ? 3 : 2)} holdings`;
+    case 'theme_max':
+      return 'Largest theme';
+    case 'sector_max':
+      return 'Largest sector';
+    case 'tech_total':
+      return 'Tech-related total';
+    case 'cash_min':
+      return 'Cash share';
+  }
 }

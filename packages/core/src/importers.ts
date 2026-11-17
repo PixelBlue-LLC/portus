@@ -3,6 +3,7 @@
  * 不同券商列名不同，这里按别名找列；成本列分「每股均价」和「总成本」两种，总成本会除以数量。
  */
 import type { Holding } from './types';
+import type { Lang } from './lang';
 
 export interface ImportResult {
   holdings: Holding[];
@@ -86,7 +87,7 @@ function findCol(headers: string[], keys: string[]): number {
 
 const SYMBOL_RE = /^[A-Z][A-Z0-9.\-/]{0,9}$/;
 
-export function parseHoldingsCsv(text: string): ImportResult {
+export function parseHoldingsCsv(text: string, lang: Lang = 'zh'): ImportResult {
   const lines = text.split(/\r?\n/).filter((l) => l.trim());
   const skipped: string[] = [];
   if (!lines.length) return { holdings: [], skipped };
@@ -103,7 +104,7 @@ export function parseHoldingsCsv(text: string): ImportResult {
       break;
     }
   }
-  if (headerIdx < 0) return { holdings: [], skipped: ['没找到包含「代码」和「数量」的表头'] };
+  if (headerIdx < 0) return { holdings: [], skipped: [lang === 'zh' ? '没找到包含「代码」和「数量」的表头' : 'No header row with symbol and quantity columns found'] };
 
   const cSym = findCol(headers, SYMBOL_KEYS);
   const cQty = findCol(headers, QTY_KEYS);

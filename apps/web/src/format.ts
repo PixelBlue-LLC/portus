@@ -1,3 +1,5 @@
+import { getLang } from './i18n';
+
 const MINUS = '−';
 
 export function usd(v: number, digits = 0): string {
@@ -21,7 +23,7 @@ export function num(v: number, digits = 2): string {
 export function timeLabel(iso?: string): string {
   if (!iso) return '';
   const d = new Date(iso);
-  return d.toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleString(getLang() === 'zh' ? 'zh-CN' : 'en-US', { month: getLang() === 'zh' ? 'numeric' : 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
 export function ageMinutes(iso?: string): number | null {

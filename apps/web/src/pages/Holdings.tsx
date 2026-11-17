@@ -3,8 +3,11 @@ import {
   accountNames,
   accountOf,
   applyImport,
+  accountName,
   DEFAULT_ACCOUNT,
+  joinList,
   mergeHoldings,
+  nameIn,
   parseHoldingsCsv,
   parseHoldingsText,
   type CashByAccount,
@@ -17,6 +20,7 @@ import {
 import { refreshMarket } from '../actions';
 import type { Derived } from '../derived';
 import { num, signedPct, usd } from '../format';
+import { getLang, t } from '../i18n';
 import { setState, updateSettings, type AppState } from '../store';
 import { Card, ConcRow, Money, Pct } from '../ui';
 
@@ -25,14 +29,14 @@ const PALETTE = ['var(--accent)', 'color-mix(in srgb, var(--accent) 65%, var(--c
 function allocation(view: PortfolioView) {
   const alloc = [...view.positions.slice(0, 5).map((p) => ({ label: p.symbol, w: p.weight }))];
   const others = view.positions.slice(5).reduce((sum, p) => sum + p.weight, 0);
-  if (others > 0) alloc.push({ label: '其他', w: Math.round(others * 10) / 10 });
-  if (view.cash > 0) alloc.push({ label: '现金', w: Math.round((view.cash / view.totalValue) * 1000) / 10 });
+  if (others > 0) alloc.push({ label: t('common.other'), w: Math.round(others * 10) / 10 });
+  if (view.cash > 0) alloc.push({ label: t('common.cash'), w: Math.round((view.cash / view.totalValue) * 1000) / 10 });
   return alloc;
 }
 
 function priceNote(p: Position): string {
   if (p.priceSource === 'quote') return '';
-  return p.priceSource === 'manual' ? '导入时的价格' : '暂用成本价';
+  return p.priceSource === 'manual' ? t('hold.priceImport') : t('hold.priceCost');
 }
 
 function PositionCard({ p, weightLabel, showAccounts }: { p: Position; weightLabel: string; showAccounts: boolean }) {
@@ -43,28 +47,28 @@ function PositionCard({ p, weightLabel, showAccounts }: { p: Position; weightLab
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           <span style={{ fontSize: 17, fontWeight: 700 }}>{p.symbol}</span>
           <span className="label">
-            {p.theme} · {weightLabel} {p.weight}%
-            {showAccounts && p.accounts?.length ? ` · ${p.accounts.join(' + ')}` : ''}
+            {nameIn(p.theme, getLang())} · {weightLabel} {p.weight}%
+            {showAccounts && p.accounts?.length ? ` · ${p.accounts.map((a) => accountName(a, getLang())).join(' + ')}` : ''}
           </span>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'flex-end' }}>
           <span style={{ fontSize: 17, fontWeight: 700 }}>${num(p.price)}</span>
           <span style={{ fontSize: 13, fontWeight: 600 }}>
-            {p.dayPct != null ? <>今日 <Pct v={p.dayPct} /></> : <span className="muted">{priceNote(p)}</span>}
+            {p.dayPct != null ? <>{t('common.today')} <Pct v={p.dayPct} /></> : <span className="muted">{priceNote(p)}</span>}
           </span>
         </div>
       </div>
       <div className="tiles" style={{ gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', fontSize: 13 }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          <span className="label">数量 · 成本</span>
-          <span>{num(p.qty)} 股 · ${num(p.costBasis)}</span>
+          <span className="label">{t('hold.qtyCost')}</span>
+          <span>{t('hold.sharesAt', { q: num(p.qty), c: num(p.costBasis) })}</span>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          <span className="label">市值</span>
+          <span className="label">{t('col.mv')}</span>
           <span>{usd(p.marketValue)}</span>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          <span className="label">累计</span>
+          <span className="label">{t('common.total')}</span>
           <span style={{ fontWeight: 600 }}>
             <Money v={p.totalPnl} />
             {p.totalPct != null ? <span className={p.totalPnl < 0 ? 'neg' : 'pos'}> · {signedPct(p.totalPct, 1)}</span> : null}
@@ -73,12 +77,12 @@ function PositionCard({ p, weightLabel, showAccounts }: { p: Position; weightLab
       </div>
       {range != null ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-          <div className="bar" style={{ height: 4 }} role="img" aria-label={`52 周区间位置 ${Math.round(range)}%`}>
+          <div className="bar" style={{ height: 4 }} role="img" aria-label={t('hold.rangeAria', { n: Math.round(range) })}>
             <b style={{ left: `calc(${Math.max(0, Math.min(100, range))}% - 6px)`, top: -4, width: 12, height: 12, borderRadius: 6 }} />
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11 }} className="muted">
-            <span>52 周低 {num(p.low52!)}</span>
-            <span>高 {num(p.high52!)}</span>
+            <span>{t('hold.low52', { v: num(p.low52!) })}</span>
+            <span>{t('hold.high52', { v: num(p.high52!) })}</span>
           </div>
         </div>
       ) : null}
@@ -98,23 +102,25 @@ export function Holdings({ s, d }: { s: AppState; d: Derived }) {
     <>
       <header className="page-head">
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          <span className="title">持仓</span>
+          <span className="title">{t('nav.holdings')}</span>
           <span className="label">
-            {view.positions.length} 只{multi ? ` · ${d.accounts.length} 个账户` : ''} · 价格来源：{d.hasQuotes ? '行情' : '未接入行情'}
+            {t('hold.count', { n: view.positions.length })}
+            {multi ? t('hold.accountsN', { n: d.accounts.length }) : ''}
+            {t('hold.priceSrc', { s: d.hasQuotes ? t('hold.srcQuotes') : t('hold.srcNone') })}
           </span>
         </div>
         <a className="btn" href="#/holdings/edit">
-          编辑
+          {t('hold.edit')}
         </a>
       </header>
 
       {multi ? (
-        <div className="seg" role="group" aria-label="账户显示方式" style={{ margin: '0 6px' }}>
+        <div className="seg" role="group" aria-label={t('hold.viewAria')} style={{ margin: '0 6px' }}>
           <button className={!split ? 'on' : ''} aria-pressed={!split} onClick={() => updateSettings({ accountView: 'merged' })}>
-            合并账户
+            {t('hold.merged')}
           </button>
           <button className={split ? 'on' : ''} aria-pressed={split} onClick={() => updateSettings({ accountView: 'split' })}>
-            按账户分开
+            {t('hold.split')}
           </button>
         </div>
       ) : null}
@@ -122,20 +128,23 @@ export function Holdings({ s, d }: { s: AppState; d: Derived }) {
       <Card>
         <div className="tiles" style={{ gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <span className="label">总市值</span>
+            <span className="label">{t('common.totalValue')}</span>
             <span className="mid" style={{ fontSize: 19 }}>{usd(view.totalValue)}</span>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <span className="label">今日</span>
+            <span className="label">{t('common.today')}</span>
             <span className="mid" style={{ fontSize: 19 }}><Money v={view.dayPnl} /></span>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <span className="label">累计</span>
+            <span className="label">{t('common.total')}</span>
             <span className="mid" style={{ fontSize: 19 }}><Money v={view.totalPnl} /></span>
           </div>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <span className="label">仓位分布{multi ? '（所有账户合并）' : ''}</span>
+          <span className="label">
+            {t('hold.alloc')}
+            {multi ? t('hold.allocAll') : ''}
+          </span>
           <div className="stack" style={{ height: 12 }} aria-hidden="true">
             {alloc.map((a, i) => (
               <div key={a.label} style={{ flex: a.w, background: PALETTE[i % PALETTE.length] }} />
@@ -158,30 +167,37 @@ export function Holdings({ s, d }: { s: AppState; d: Derived }) {
             ? d.byAccount.map(({ name, view: av }) => (
                 <div key={name} className="col">
                   <div className="acct-head">
-                    <span style={{ fontWeight: 700 }}>{name}</span>
+                    <span style={{ fontWeight: 700 }}>{accountName(name, getLang())}</span>
                     <span className="label">
-                      {usd(av.totalValue)} · 占总资产 {view.totalValue ? ((av.totalValue / view.totalValue) * 100).toFixed(1) : '0'}% · 现金 {usd(av.cash)}
+                      {t('hold.acctLine', {
+                        v: usd(av.totalValue),
+                        p: view.totalValue ? ((av.totalValue / view.totalValue) * 100).toFixed(1) : '0',
+                        c: usd(av.cash),
+                      })}
                     </span>
                   </div>
                   {av.positions.map((p) => (
-                    <PositionCard key={name + p.symbol} p={p} weightLabel="占该账户" showAccounts={false} />
+                    <PositionCard key={name + p.symbol} p={p} weightLabel={t('hold.ofAccount')} showAccounts={false} />
                   ))}
                 </div>
               ))
-            : view.positions.map((p) => <PositionCard key={p.symbol} p={p} weightLabel="仓位" showAccounts={multi} />)}
+            : view.positions.map((p) => <PositionCard key={p.symbol} p={p} weightLabel={t('th.weight')} showAccounts={multi} />)}
         </div>
         <div className="col">
           <Card>
             <div className="card-head">
-              <h2>集中度</h2>
+              <h2>{t('hold.conc')}</h2>
               <span className="label" style={{ color: overN ? 'var(--warn-text)' : undefined, fontWeight: 600 }}>
-                {overN} 项超标 · {d.concentration.length - overN} 项正常
+                {t('hold.concCount', { o: overN, k: d.concentration.length - overN })}
               </span>
             </div>
             {d.concentration.map((c) => (
               <ConcRow key={c.type + c.label} c={c} />
             ))}
-            <span className="label">{multi ? '按所有账户合并计算（同一只股票在不同账户算一个仓位）。' : ''}阈值可以在设置里改。</span>
+            <span className="label">
+              {multi ? t('hold.concMulti') : ''}
+              {t('hold.concNote')}
+            </span>
           </Card>
         </div>
       </div>
@@ -279,13 +295,13 @@ export function HoldingsEditor({ s }: { s: AppState }) {
   );
 
   const addAccount = () => {
-    const name = prompt('账户名（比如 Schwab、IBKR、Fidelity）')?.trim();
+    const name = prompt(t('edit.acctPrompt'))?.trim();
     if (!name) return;
     if (!accounts.includes(name)) setExtraAccounts((xs) => [...xs, name]);
     setAcct(name);
   };
   const removeAccount = () => {
-    if (!confirm(`删除「${acct}」这个账户里的全部持仓和现金？`)) return;
+    if (!confirm(t('edit.removeConfirm', { a: accountName(acct, getLang()) }))) return;
     setRows((rs) => rs.filter((r) => r.account !== acct));
     setCash((c) => {
       const { [acct]: _gone, ...rest } = c;
@@ -298,7 +314,7 @@ export function HoldingsEditor({ s }: { s: AppState }) {
 
   const startImport = (r: ImportResult, source: Pending['source']) => {
     if (!r.holdings.length) {
-      setMsg(r.skipped[0] ?? '没有识别到持仓');
+      setMsg(r.skipped[0] ?? t('edit.noneFound'));
       return;
     }
     setMsg('');
@@ -315,11 +331,11 @@ export function HoldingsEditor({ s }: { s: AppState }) {
     <>
       <header className="page-head">
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          <span className="title">录入持仓</span>
-          <span className="label">只存在这个浏览器里。现价和行业分类会从行情自动获取，不用填。</span>
+          <span className="title">{t('edit.title')}</span>
+          <span className="label">{t('edit.sub')}</span>
         </div>
         <button className="btn primary" onClick={save}>
-          保存
+          {t('edit.save')}
         </button>
       </header>
 
@@ -339,7 +355,8 @@ export function HoldingsEditor({ s }: { s: AppState }) {
             setWasSample(false);
             if (view) updateSettings({ accountView: view });
             const sk = pending.skipped;
-            setMsg(`已导入 ${pending.holdings.length} 条到「${account}」${sk.length ? `，跳过 ${sk.length} 行：${sk.slice(0, 3).join('、')}${sk.length > 3 ? '…' : ''}` : ''}。确认无误后点「保存」。`);
+            const skip = sk.length ? t('edit.skipped', { n: sk.length, list: joinList(sk.slice(0, 3), getLang()) + (sk.length > 3 ? '…' : '') }) : '';
+            setMsg(t('edit.imported', { n: pending.holdings.length, a: accountName(account, getLang()), skip }));
             setPending(null);
           }}
         />
@@ -347,63 +364,68 @@ export function HoldingsEditor({ s }: { s: AppState }) {
 
       <Card>
         <div className="card-head">
-          <div className="chips-row" role="tablist" aria-label="账户">
+          <div className="chips-row" role="tablist" aria-label={t('edit.acctTabs')}>
             {accounts.map((a) => (
               <button key={a} role="tab" aria-selected={a === acct} className={`acct-chip ${a === acct ? 'on' : ''}`} onClick={() => setAcct(a)}>
-                {a}
+                {accountName(a, getLang())}
               </button>
             ))}
             <button className="acct-chip add" onClick={addAccount}>
-              + 账户
+              {t('edit.addAcct')}
             </button>
           </div>
           {accounts.length > 1 ? (
             <button className="btn small" onClick={removeAccount}>
-              删除这个账户
+              {t('edit.delAcct')}
             </button>
           ) : null}
         </div>
         <div className="edit-list">
           <div className="edit-row edit-head">
-            <span>代码</span>
-            <span>数量</span>
-            <span>每股成本</span>
-            <span>总成本</span>
-            <span>市值</span>
+            <span>{t('col.symbol')}</span>
+            <span>{t('col.qty')}</span>
+            <span>{t('col.cost')}</span>
+            <span>{t('col.total')}</span>
+            <span>{t('col.mv')}</span>
             <span />
           </div>
           {visible.map(({ r, i }) => (
             <div className="edit-row" key={i}>
-              <label className="cell"><span className="cell-label">代码</span><input className="input" value={r.symbol} placeholder="AAPL" onChange={(e) => setCell(i, 'symbol', e.target.value)} /></label>
-              <label className="cell"><span className="cell-label">数量</span><input className="input" inputMode="decimal" value={r.qty} placeholder="10" onChange={(e) => setCell(i, 'qty', e.target.value)} /></label>
-              <label className="cell"><span className="cell-label">每股成本</span><input className="input" inputMode="decimal" value={r.cost} placeholder="150" onChange={(e) => setCell(i, 'cost', e.target.value)} /></label>
-              <label className="cell"><span className="cell-label">总成本</span><input className="input" inputMode="decimal" value={r.total} placeholder="1500" onChange={(e) => setCell(i, 'total', e.target.value)} /></label>
+              <label className="cell"><span className="cell-label">{t('col.symbol')}</span><input className="input" value={r.symbol} placeholder="AAPL" onChange={(e) => setCell(i, 'symbol', e.target.value)} /></label>
+              <label className="cell"><span className="cell-label">{t('col.qty')}</span><input className="input" inputMode="decimal" value={r.qty} placeholder="10" onChange={(e) => setCell(i, 'qty', e.target.value)} /></label>
+              <label className="cell"><span className="cell-label">{t('col.cost')}</span><input className="input" inputMode="decimal" value={r.cost} placeholder="150" onChange={(e) => setCell(i, 'cost', e.target.value)} /></label>
+              <label className="cell"><span className="cell-label">{t('col.total')}</span><input className="input" inputMode="decimal" value={r.total} placeholder="1500" onChange={(e) => setCell(i, 'total', e.target.value)} /></label>
               <span className="cell mv" title={r.name}>
-                <span className="cell-label">市值</span>
+                <span className="cell-label">{t('col.mv')}</span>
                 <span>{priceOf(r) && Number(r.qty) > 0 ? usd(priceOf(r)! * Number(r.qty), 2) : '—'}</span>
                 {r.name ? <span className="cell-name">{r.name}</span> : null}
               </span>
-              <button className="btn icon small del" aria-label={`删除 ${r.symbol || '这一行'}`} onClick={() => setRows((rs) => rs.filter((_, j) => j !== i))}>
+              <button className="btn icon small del" aria-label={t('edit.delRow', { s: r.symbol || t('edit.thisRow') })} onClick={() => setRows((rs) => rs.filter((_, j) => j !== i))}>
                 ×
               </button>
             </div>
           ))}
-          {!visible.length ? <span className="label">「{acct}」还没有持仓。可以手动加，也可以在下面导入。</span> : null}
+          {!visible.length ? <span className="label">{t('edit.emptyAcct', { a: accountName(acct, getLang()) })}</span> : null}
           {visible.length ? (
             <div className="edit-total">
-              「{acct}」合计：总成本 {usd(acctTotals.cost, 2)} · 市值 {acctTotals.mv ? usd(acctTotals.mv, 2) : '—'}
-              {acctTotals.mv ? <> · 浮动盈亏 <Money v={acctTotals.mv - acctTotals.cost} digits={2} /></> : null}
-              {Number(cash[acct]) > 0 ? <> · 加现金共 {usd(acctTotals.mv + Number(cash[acct]), 2)}</> : null}
-              {acctTotals.missing ? <span className="label">（部分没有价格，接入行情后补上）</span> : null}
+              {t('edit.totals', { a: accountName(acct, getLang()), c: usd(acctTotals.cost, 2), m: acctTotals.mv ? usd(acctTotals.mv, 2) : '—' })}
+              {acctTotals.mv ? (
+                <>
+                  {t('edit.unreal')}
+                  <Money v={acctTotals.mv - acctTotals.cost} digits={2} />
+                </>
+              ) : null}
+              {Number(cash[acct]) > 0 ? t('edit.withCash', { v: usd(acctTotals.mv + Number(cash[acct]), 2) }) : null}
+              {acctTotals.missing ? <span className="label">{t('edit.missing')}</span> : null}
             </div>
           ) : null}
         </div>
         <div className="row">
           <button className="btn small" onClick={() => setRows((rs) => [...rs, blank(acct)])}>
-            加一行
+            {t('edit.addRow')}
           </button>
           <label className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <span>「{acct}」现金 $</span>
+            <span>{t('edit.cashLabel', { a: accountName(acct, getLang()) })}</span>
             <input className="input" style={{ width: 140 }} inputMode="decimal" value={cash[acct] ?? ''} placeholder="0" onChange={(e) => setCash((c) => ({ ...c, [acct]: e.target.value }))} />
           </label>
         </div>
@@ -411,9 +433,9 @@ export function HoldingsEditor({ s }: { s: AppState }) {
 
       <div className="grid2">
         <Card>
-          <h2>从券商导入 CSV</h2>
+          <h2>{t('imp.csvTitle')}</h2>
           <p className="body" style={{ margin: 0, fontSize: 14, lineHeight: 1.6 }}>
-            在券商网站导出持仓（Positions）CSV。会识别代码、数量、成本和现金；导入前会问你放进哪个账户、要不要保留现有持仓。
+            {t('imp.csvBody')}
           </p>
           <input
             ref={fileRef}
@@ -423,18 +445,18 @@ export function HoldingsEditor({ s }: { s: AppState }) {
             onChange={async (e) => {
               const f = e.target.files?.[0];
               if (!f) return;
-              startImport(parseHoldingsCsv(await f.text()), 'csv');
+              startImport(parseHoldingsCsv(await f.text(), getLang()), 'csv');
               e.target.value = '';
             }}
           />
           <button className="btn" onClick={() => fileRef.current?.click()}>
-            选择 CSV 文件
+            {t('imp.choose')}
           </button>
         </Card>
         <Card>
-          <h2>粘贴文本</h2>
+          <h2>{t('imp.pasteTitle')}</h2>
           <label className="field">
-            <span>每行：代码 数量 每股成本</span>
+            <span>{t('imp.pasteHint')}</span>
             <textarea className="input" value={paste} placeholder={'NVDA 30 92\nAAPL 20 150'} onChange={(e) => setPaste(e.target.value)} />
           </label>
           <button
@@ -445,7 +467,7 @@ export function HoldingsEditor({ s }: { s: AppState }) {
               setPaste('');
             }}
           >
-            识别
+            {t('imp.parse')}
           </button>
         </Card>
       </div>
@@ -487,41 +509,39 @@ function ImportDialog({
     : preview;
 
   return (
-    <div className="card import-dialog" role="dialog" aria-label="确认导入">
-      <h2>
-        识别到 {pending.holdings.length} 条持仓{pending.cash != null ? `，现金 ${usd(pending.cash)}` : ''}
-      </h2>
-      {wasSample ? <span className="label">示例数据会被删掉，换成你导入的持仓。</span> : null}
+    <div className="card import-dialog" role="dialog" aria-label={t('dlg.aria')}>
+      <h2>{t('dlg.found', { n: pending.holdings.length, cash: pending.cash != null ? t('dlg.cash', { v: usd(pending.cash) }) : '' })}</h2>
+      {wasSample ? <span className="label">{t('dlg.sampleGone')}</span> : null}
 
       <label className="field">
-        <span>放进哪个账户？</span>
-        <input className="input" list="acct-list" value={account} placeholder="比如 Schwab、IBKR" onChange={(e) => setAccount(e.target.value)} />
+        <span>{t('dlg.whichAcct')}</span>
+        <input className="input" list="acct-list" value={account} placeholder={t('dlg.acctPh')} onChange={(e) => setAccount(e.target.value)} />
         <datalist id="acct-list">
           {existing.map((a) => (
             <option key={a} value={a} />
           ))}
         </datalist>
-        {pending.broker && pending.broker === name ? <span className="label">从文件格式认出是 {pending.broker}。</span> : null}
+        {pending.broker && pending.broker === name ? <span className="label">{t('dlg.detected', { b: pending.broker })}</span> : null}
       </label>
 
       {hasReal ? (
         <fieldset className="choice">
-          <legend>你已经有 {current.holdings.length} 条持仓（{existing.join('、')}），怎么处理？</legend>
+          <legend>{t('dlg.existing', { n: current.holdings.length, list: joinList(existing.map((a) => accountName(a, getLang())), getLang()) })}</legend>
           <label>
             <input type="radio" name="mode" checked={mode === 'add'} onChange={() => setMode('add')} />
             <span>
-              加进来，保留现有持仓
+              {t('dlg.add')}
               {updatesExisting ? (
-                <em>「{name}」已经有持仓，{pending.source === 'csv' ? '这个账户会换成这次导入的内容' : '同代码以这次的为准'}，其他账户不动</em>
+                <em>{t(pending.source === 'csv' ? 'dlg.updCsv' : 'dlg.updPaste', { a: accountName(name, getLang()) })}</em>
               ) : (
-                <em>作为新账户「{name || '…'}」</em>
+                <em>{t('dlg.newAcct', { a: name || '…' })}</em>
               )}
             </span>
           </label>
           <label>
             <input type="radio" name="mode" checked={mode === 'replace'} onChange={() => setMode('replace')} />
             <span>
-              清除现有全部持仓，只留这次导入的
+              {t('dlg.replace')}
             </span>
           </label>
         </fieldset>
@@ -529,29 +549,31 @@ function ImportDialog({
 
       {resultAccounts.length > 1 ? (
         <fieldset className="choice">
-          <legend>导入后有 {resultAccounts.length} 个账户，持仓页怎么显示？</legend>
+          <legend>{t('dlg.viewQ', { n: resultAccounts.length })}</legend>
           <label>
             <input type="radio" name="view" checked={view === 'merged'} onChange={() => setView('merged')} />
             <span>
-              合并账户<em>同一只股票合成一条，看整体仓位</em>
+              {t('hold.merged')}
+              <em>{t('dlg.mergedDesc')}</em>
             </span>
           </label>
           <label>
             <input type="radio" name="view" checked={view === 'split'} onChange={() => setView('split')} />
             <span>
-              按账户分开<em>每个券商单独列出（以后在持仓页也能切换）</em>
+              {t('hold.split')}
+              <em>{t('dlg.splitDesc')}</em>
             </span>
           </label>
-          <span className="label">风险和集中度始终按所有账户合并计算。</span>
+          <span className="label">{t('dlg.riskNote')}</span>
         </fieldset>
       ) : null}
 
       <div className="row">
         <button className="btn primary" disabled={!applied} onClick={() => applied && onConfirm(applied, name, resultAccounts.length > 1 ? view : undefined)}>
-          确认导入
+          {t('dlg.confirm')}
         </button>
         <button className="btn" onClick={onCancel}>
-          取消
+          {t('common.cancel')}
         </button>
       </div>
     </div>

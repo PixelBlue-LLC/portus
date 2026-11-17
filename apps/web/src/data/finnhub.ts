@@ -2,6 +2,7 @@
  * Finnhub 适配器：行情、52 周高低、公司新闻、财报日历。
  * 用户自己的 key，直接从浏览器调用；免费档每分钟 60 次，所以并发限制为 4 并顺序排队。
  */
+import { t } from '../i18n';
 import { SECTOR_ETFS, type NewsItem, type Quote, type SectorPerf } from 'portus-core';
 
 const BASE = 'https://finnhub.io/api/v1';
@@ -14,11 +15,11 @@ async function get<T>(path: string, params: Record<string, string>, key: string)
   try {
     res = await fetch(`${BASE}${path}?${qs}`);
   } catch {
-    throw new SourceError('连不上 Finnhub（网络问题，或浏览器拦截了跨域请求）');
+    throw new SourceError(t('err.finnhubNet'));
   }
-  if (res.status === 401 || res.status === 403) throw new SourceError('Finnhub key 无效，或这个接口不在免费档里');
-  if (res.status === 429) throw new SourceError('Finnhub 免费额度用完了（每分钟 60 次），稍后再刷新');
-  if (!res.ok) throw new SourceError(`Finnhub 返回 ${res.status}`);
+  if (res.status === 401 || res.status === 403) throw new SourceError(t('err.finnhubKey'));
+  if (res.status === 429) throw new SourceError(t('err.finnhubRate'));
+  if (!res.ok) throw new SourceError(t('err.finnhubStatus', { s: res.status }));
   return (await res.json()) as T;
 }
 

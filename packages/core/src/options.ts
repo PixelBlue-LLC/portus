@@ -10,6 +10,7 @@
  *   Vol Skew       25Δ put IV − 25Δ call IV（~30 天到期）
  *   IV Rank        (IV − min) / (max − min) × 100
  */
+import type { Lang } from './lang';
 
 export interface OptionContract {
   underlying: string;
@@ -188,14 +189,27 @@ export function spreadPct(c: OptionContract): number {
   return round(((c.ask - c.bid) / c.mark) * 100);
 }
 
-export function stage1Liquidity(c: OptionContract): { passed: boolean; reason: string } {
+const STRATEGY_EN: Record<Strategy, string> = {
+  A: 'Pre-earnings trend',
+  B: 'Across earnings (volatile)',
+  C: 'Bullish after a pullback',
+  D: 'Protective put',
+};
+
+export function strategyName(s: Strategy, lang: Lang = 'zh'): string {
+  return lang === 'zh' ? STRATEGY_NAMES[s] : STRATEGY_EN[s];
+}
+
+export function stage1Liquidity(c: OptionContract, lang: Lang = 'zh'): { passed: boolean; reason: string } {
+  const zh = lang === 'zh';
   const R = OPTION_RULES;
   const oiMin = R.coreSymbols.has(c.underlying) ? R.oiMinCore : R.oiMin;
-  if (c.dte < R.dteMin || c.dte > R.dteMax) return { passed: false, reason: `到期 ${c.dte} 天，不在 ${R.dteMin}–${R.dteMax} 天` };
-  if (c.openInterest < oiMin) return { passed: false, reason: `未平仓量 ${c.openInterest} < ${oiMin}` };
+  if (c.dte < R.dteMin || c.dte > R.dteMax)
+    return { passed: false, reason: zh ? `到期 ${c.dte} 天，不在 ${R.dteMin}–${R.dteMax} 天` : `${c.dte} days to expiry, outside ${R.dteMin}–${R.dteMax}` };
+  if (c.openInterest < oiMin) return { passed: false, reason: zh ? `未平仓量 ${c.openInterest} < ${oiMin}` : `Open interest ${c.openInterest} < ${oiMin}` };
   const sp = spreadPct(c);
-  if (sp > R.spreadMaxPct) return { passed: false, reason: `点差 ${sp}% > ${R.spreadMaxPct}%` };
-  if (c.volume < R.volumeMin) return { passed: false, reason: '当日无成交' };
+  if (sp > R.spreadMaxPct) return { passed: false, reason: zh ? `点差 ${sp}% > ${R.spreadMaxPct}%` : `Spread ${sp}% > ${R.spreadMaxPct}%` };
+  if (c.volume < R.volumeMin) return { passed: false, reason: zh ? '当日无成交' : 'No volume today' };
   return { passed: true, reason: '' };
 }
 
@@ -224,11 +238,11 @@ export interface ScreenedOption extends OptionContract {
   rejectReason: string;
 }
 
-export function enrichOption(c: OptionContract, underlyingPrice?: number, ma50?: number): ScreenedOption {
+export function enrichOption(c: OptionContract, underlyingPrice?: number, ma50?: number, lang: Lang = 'zh'): ScreenedOption {
   const R = OPTION_RULES;
   const oiMin = R.coreSymbols.has(c.underlying) ? R.oiMinCore : R.oiMin;
   const sp = spreadPct(c);
-  const { passed, reason } = stage1Liquidity(c);
+  const { passed, reason } = stage1Liquidity(c, lang);
   let liquidity: Liquidity = '低';
   if (c.openInterest >= Math.max(oiMin * 5, 5000) && sp <= 2.5 && c.volume >= 100) liquidity = '高';
   else if (c.openInterest >= oiMin && sp <= R.spreadMaxPct && c.volume >= R.volumeMin) liquidity = '中';
