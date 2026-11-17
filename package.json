@@ -1,5 +1,5 @@
 {
-  "name": "loadline",
+  "name": "portus",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -8,8 +8,8 @@
     "apps/*"
   ],
   "scripts": {
-    "dev": "npm -w loadline-web run dev",
-    "build": "npm -w loadline-web run build",
+    "dev": "npm -w portus-web run dev",
+    "build": "npm -w portus-web run build",
     "test": "vitest run",
     "typecheck": "tsc -p packages/core && tsc -p apps/web"
   },

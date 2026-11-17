@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react';
-import { DEFAULT_ACCOUNT, DEFAULT_RULES, type CashByAccount, type ConcentrationRule, type Holding, type NewsItem, type Quote, type SectorPerf } from 'loadline-core';
+import { DEFAULT_ACCOUNT, DEFAULT_RULES, type CashByAccount, type ConcentrationRule, type Holding, type NewsItem, type Quote, type SectorPerf } from 'portus-core';
 
 export type ThemePref = 'system' | 'light' | 'dark';
 
@@ -47,7 +47,28 @@ export interface AppState {
   isSample?: boolean;
 }
 
-const KEY = 'loadline:v1';
+const KEY = 'portus:v1';
+// 2026-11-17 由 Loadline 改名为 Portus：旧键里的数据第一次打开时搬过来（同一个域名下 localStorage 共用）
+const LEGACY_KEYS = ['loadline:v1'];
+const BACKUP_APPS = ['portus', 'loadline'];
+
+function readSaved(): string | null {
+  const raw = localStorage.getItem(KEY);
+  if (raw) return raw;
+  for (const old of LEGACY_KEYS) {
+    const legacy = localStorage.getItem(old);
+    if (legacy) {
+      try {
+        localStorage.setItem(KEY, legacy);
+        localStorage.removeItem(old);
+      } catch {
+        // 写不进去就先用旧数据，下次再搬
+      }
+      return legacy;
+    }
+  }
+  return null;
+}
 
 export const DEFAULT_SETTINGS: Settings = {
   finnhubKey: '',
@@ -70,7 +91,7 @@ function migrateSettings(s: Settings): Settings {
 function load(): AppState {
   const base: AppState = { holdings: [], cashByAccount: {}, settings: DEFAULT_SETTINGS, market: EMPTY_MARKET, checklist: {}, chat: [], loading: false };
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = readSaved();
     if (!raw) return base;
     const saved = JSON.parse(raw) as Partial<AppState> & { cash?: number };
     // 旧版只有一个总现金
@@ -130,12 +151,12 @@ export function useAppState(): AppState {
 export function exportBackup(includeKeys: boolean): string {
   const { holdings, cashByAccount, settings, checklist } = state;
   const s = includeKeys ? settings : { ...settings, finnhubKey: '', anthropicKey: '' };
-  return JSON.stringify({ app: 'loadline', version: 2, exportedAt: new Date().toISOString(), holdings, cashByAccount, settings: s, checklist }, null, 2);
+  return JSON.stringify({ app: 'portus', version: 2, exportedAt: new Date().toISOString(), holdings, cashByAccount, settings: s, checklist }, null, 2);
 }
 
 export function importBackup(text: string): void {
   const data = JSON.parse(text) as Partial<AppState> & { app?: string; cash?: number };
-  if (data.app !== 'loadline' || !Array.isArray(data.holdings)) throw new Error('不是有效的备份文件');
+  if (!BACKUP_APPS.includes(data.app ?? '') || !Array.isArray(data.holdings)) throw new Error('不是有效的备份文件');
   setState((s) => ({
     holdings: data.holdings ?? [],
     cashByAccount: data.cashByAccount ?? (typeof data.cash === 'number' && data.cash > 0 ? { [DEFAULT_ACCOUNT]: data.cash } : {}),
@@ -159,6 +180,7 @@ export function exitSample() {
 
 export function clearAll() {
   localStorage.removeItem(KEY);
+  for (const old of LEGACY_KEYS) localStorage.removeItem(old);
   state = load();
   for (const l of listeners) l();
 }

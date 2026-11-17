@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import type { ConcentrationResult, SectorPerf } from 'loadline-core';
+import type { ConcentrationResult, SectorPerf } from 'portus-core';
 import { signedPct, signedUsd } from './format';
 
 export function tone(v: number | null | undefined): string {

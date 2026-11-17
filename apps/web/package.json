@@ -1,5 +1,5 @@
 {
-  "name": "loadline-web",
+  "name": "portus-web",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -9,7 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "loadline-core": "0.1.0",
+    "portus-core": "0.1.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1"
   },

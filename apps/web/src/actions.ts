@@ -1,4 +1,4 @@
-import { attributionPrompt, askPrompt } from 'loadline-core';
+import { attributionPrompt, askPrompt } from 'portus-core';
 import { askClaude } from './data/anthropic';
 import { fetchMarket } from './data/finnhub';
 import { getState, setState } from './store';

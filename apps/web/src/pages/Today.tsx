@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { attributionFallback } from 'loadline-core';
+import { attributionFallback } from 'portus-core';
 import { refreshMarket, runAttribution } from '../actions';
 import type { Derived } from '../derived';
 import { ageMinutes, signedPct, signedUsd, timeLabel, usd } from '../format';

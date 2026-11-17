@@ -1,4 +1,4 @@
-# Loadline · 开源版
+# Portus · 开源版
 
 > 进度、卡点、下一步只看 Google Sheets「PixelBlue 排期表」的 Market Compass 页。本文件只写怎么干活。
 > 旧的私有版在 `~/PixelBlue-LLC/MarketCompass`（Python + Schwab，自己用），这里是从零重写的开源版。计划见 Claude Docs「Market Compass 开源重写计划」。
@@ -8,7 +8,7 @@
 - **不给买卖建议或信号。** 只按用户自己设的规则计算和展示；AI 只解释已发生的事实。`packages/core/src/ai.ts` 里的 `violatesAdvicePolicy` 拦截指令性措辞，改 AI 功能时保留这层检查，并在 `insights.test.ts` 里加用例。
 - **不碰用户数据。** 持仓、设置、key 只存在浏览器 localStorage；请求从浏览器直接发给用户自己选的服务商。不加任何分析、追踪、cookie。
 - **不提供、不转发行情数据。** 用户用自己的 key 自己拉。
-- 产品名 Loadline（2026-11-06 定，不设中文名）。显示名只在 `apps/web/src/brand.ts` 和 `index.html` 的 `<title>` 里改。npm 上 `@loadline` scope 已被别人占用，内部包名用 `loadline-core` / `loadline-web`，且保持 `private: true`，不要发布到 npm。
+- 产品名 Portus（拉丁语「港口」；2026-11-17 由 Loadline 改名，不设中文名）。显示名只在 `apps/web/src/brand.ts` 和 `index.html` 的 `<title>` 里改。npm 上 `portus` 包名已被别人占用，内部包名用 `portus-core` / `portus-web`，且保持 `private: true`，不要发布到 npm。浏览器存储键是 `portus:v1`，`store.ts` 会把旧键 `loadline:v1` 的数据自动搬过来、也接受旧的 `loadline` 备份文件，这段迁移不要删。
 
 - **多账户**（2026-11-06）：持仓带 `account`，现金按账户存（`cashByAccount`）。风险和集中度永远按 `aggregateBySymbol` 跨账户合并后算；持仓页可切「合并账户 / 按账户分开」。导入走 `applyImport`：示例数据直接丢弃；已有持仓时让用户选「加进来 / 清除全部」，同名账户重新导入 CSV = 更新该账户。
 - **不用用户填现价和主题**：价格来自行情（没 key 时用导入时的价格或成本价兜底），行业用 Finnhub `profile2` 的 `finnhubIndustry`（中文映射在 `classify.ts`），ETF 退回内置表。

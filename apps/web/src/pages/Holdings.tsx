@@ -13,7 +13,7 @@ import {
   type ImportResult,
   type PortfolioView,
   type Position,
-} from 'loadline-core';
+} from 'portus-core';
 import { refreshMarket } from '../actions';
 import type { Derived } from '../derived';
 import { num, signedPct, usd } from '../format';

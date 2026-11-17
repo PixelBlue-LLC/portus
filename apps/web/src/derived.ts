@@ -14,7 +14,7 @@ import {
   tomorrowWatch,
   totalCash,
   accountOf,
-} from 'loadline-core';
+} from 'portus-core';
 import type { AppState } from './store';
 
 /** 从状态算出各页要用的数据。全部来自 core 的纯函数。 */
