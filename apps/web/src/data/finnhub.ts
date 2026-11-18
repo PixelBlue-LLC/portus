@@ -44,7 +44,7 @@ interface FhQuote { c: number; dp: number | null; pc: number; t: number }
 interface FhMetric { metric?: { '52WeekHigh'?: number; '52WeekLow'?: number } }
 interface FhNews { headline: string; source: string; url: string; datetime: number; summary?: string }
 interface FhProfile { finnhubIndustry?: string; name?: string }
-interface FhEarnings { earningsCalendar?: Array<{ date: string; symbol: string }> }
+interface FhEarnings { earningsCalendar?: Array<{ date: string; symbol: string; hour?: string }> }
 
 const ymd = (d: Date) => d.toISOString().slice(0, 10);
 
@@ -53,19 +53,23 @@ export interface MarketFetch {
   sectors: SectorPerf[];
   news: NewsItem[];
   earnings: Record<string, string>;
+  earningsHour: Record<string, string>;
   /** 这次新查到的行业（只查缓存里没有的代码） */
   industries: Record<string, string>;
   errors: string[];
 }
 
-export async function fetchMarket(symbols: string[], key: string, knownIndustries: Record<string, string> = {}): Promise<MarketFetch> {
+/**
+ * extraSymbols：只要报价的代码（提醒规则、分批计划、相关性候选里出现但没持有的），不查新闻和行业。
+ */
+export async function fetchMarket(symbols: string[], key: string, knownIndustries: Record<string, string> = {}, extraSymbols: string[] = []): Promise<MarketFetch> {
   const errors = new Set<string>();
   const note = (r: unknown) => {
     if (r instanceof Error) errors.add(r.message);
   };
   const uniq = [...new Set(symbols.map((s) => s.toUpperCase()))];
   const sectorSyms = Object.keys(SECTOR_ETFS);
-  const allQuoteSyms = [...new Set([...uniq, ...sectorSyms])];
+  const allQuoteSyms = [...new Set([...uniq, ...sectorSyms, ...extraSymbols.map((x) => x.toUpperCase())])];
 
   const quoteRes = await pool(allQuoteSyms, 4, (s) => get<FhQuote>('/quote', { symbol: s }, key));
   const quotes: Record<string, Quote> = {};
@@ -106,11 +110,17 @@ export async function fetchMarket(symbols: string[], key: string, knownIndustrie
   news.sort((a, b) => b.publishedAt.localeCompare(a.publishedAt));
 
   const earnings: Record<string, string> = {};
+  const earningsHour: Record<string, string> = {};
   try {
-    const ahead = new Date(to.getTime() + 30 * 864e5);
+    // 日历页往后看 60 天
+    const ahead = new Date(to.getTime() + 60 * 864e5);
     const r = await get<FhEarnings>('/calendar/earnings', { from: ymd(to), to: ymd(ahead) }, key);
     const held = new Set(uniq);
-    for (const e of r.earningsCalendar ?? []) if (held.has(e.symbol) && !earnings[e.symbol]) earnings[e.symbol] = e.date;
+    for (const e of r.earningsCalendar ?? []) {
+      if (!held.has(e.symbol) || earnings[e.symbol]) continue;
+      earnings[e.symbol] = e.date;
+      if (e.hour) earningsHour[e.symbol] = e.hour;
+    }
   } catch (e) {
     note(e);
   }
@@ -125,5 +135,5 @@ export async function fetchMarket(symbols: string[], key: string, knownIndustrie
     industries[s] = r?.finnhubIndustry ?? '';
   });
 
-  return { quotes, sectors, news, earnings, industries, errors: [...errors] };
+  return { quotes, sectors, news, earnings, earningsHour, industries, errors: [...errors] };
 }

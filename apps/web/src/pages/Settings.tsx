@@ -44,6 +44,16 @@ export function Settings({ s }: { s: AppState }) {
             </label>
             <label className="field">
               <span>
+                {t('set.twelve')} ·{' '}
+                <a href="https://twelvedata.com/register" target="_blank" rel="noreferrer">
+                  {t('set.register')}
+                </a>
+              </span>
+              <input className="input" type="password" autoComplete="off" value={st.twelveDataKey} onChange={(e) => updateSettings({ twelveDataKey: e.target.value.trim() })} />
+              <span className="label">{t('set.twelveHelp')}</span>
+            </label>
+            <label className="field">
+              <span>
                 {t('set.anthropic')} ·{' '}
                 <a href="https://console.anthropic.com/" target="_blank" rel="noreferrer">
                   {t('set.get')}

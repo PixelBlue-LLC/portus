@@ -14,6 +14,7 @@ import {
   tomorrowWatch,
   totalCash,
   accountOf,
+  evaluateAlerts,
 } from 'portus-core';
 import { resolveLang } from './i18n';
 import type { AppState } from './store';
@@ -53,8 +54,9 @@ export function useDerived(s: AppState) {
       lang,
       newsHeld: s.market.news.filter((n) => held.has(n.symbol)),
       hasQuotes: view.positions.some((p) => p.priceSource === 'quote'),
+      alertHits: evaluateAlerts(s.alerts, view, s.market.quotes, lang),
     };
-  }, [s.holdings, s.cashByAccount, s.market, s.settings.rules, lang]);
+  }, [s.holdings, s.cashByAccount, s.market, s.settings.rules, s.alerts, lang]);
 }
 
 export type Derived = ReturnType<typeof useDerived>;

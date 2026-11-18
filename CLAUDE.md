@@ -18,7 +18,15 @@
 
 - `packages/core`：纯函数（持仓估值、集中度、风险评分、期权指标和筛选、今日结论/归因/明日关注、CSV 导入、AI 提示词和检查）。所有数字都在这里算，带 Vitest 单测。从旧版 Python 移植，测试用例和旧版对照。
 - `apps/web`：React + Vite 静态站，hash 路由，`base: './'`，打包到 `apps/web/dist`，CI 在 main 分支自动部署到 GitHub Pages。
-- 数据源适配器在 `apps/web/src/data/`（Finnhub、Anthropic）。两家都已实测允许浏览器直连（返回 `Access-Control-Allow-Origin: *`）。
+- 数据源适配器在 `apps/web/src/data/`（Finnhub、Twelve Data、Anthropic）。三家都已实测允许浏览器直连（返回 `Access-Control-Allow-Origin: *`）。Twelve Data 只用来拉日线（相关性、实际波动率），免费档每分钟 8 次，适配器按 8 只一批、批间等 61 秒；同一天同一只只拉一次（`history.fetchedOn`）。
+- **阶段二功能（2026-11-17）**，计算都在 core，各有一个文件和测试（`packages/core/test/features.test.ts`）：
+  - `alerts.ts` 规则提醒：用户自己设的条件，触发了只写事实，不给操作建议。新加规则类型要同时加 `describeAlert` 的中英文和 i18n 里的 `alerts.type.*`。
+  - `calendar.ts` 事件日历和 .ics 导出：宏观日程是手工维护的官方日程表（美联储、BLS、NYSE），覆盖到 `MACRO_CALENDAR_END`。**每年 11 月前后**等下一年日程公布后补一年，改 `MACRO_CALENDAR_CHECKED`；过了 END 页面会提示「请更新」。
+  - `etf.ts` ETF 穿透：内置常见 ETF 的前十大成分（带数据日期），**每季度更新一次**；同一指数的基金共用一张表（`proxy`）。用户可以在页面上给任何 ETF 填自己的成分表（`etfCustom`），优先于内置。
+  - `correlation.ts` 相关性：对数收益率、按日期对齐、约半年 126 个交易日、少于 60 个共同交易日不给数字。
+  - `plans.ts` 分批计划和挂单记录：只汇总用户录入的数据。
+  - `optionImport.ts` 期权链导入：没有找到免费、允许浏览器直连、条款也明确允许这样用的期权数据源，所以让用户贴券商导出的 CSV；列名按别名识别，也认 OCC 合约代码。期权页只显示指标，不显示 `options.ts` 里的策略分类和筛选结果（那些更像建议）。
+- 页面：「穿透」`pages/Risk.tsx`（ETF 穿透 + 相关性），「日历」`pages/Calendar.tsx`，「计划」`pages/Plans.tsx`（提醒 + 分批计划），期权页的导入卡片在 `pages/Options.tsx`。示例数据带两条示例提醒和一个示例计划（id 以 `sample-` 开头），退出示例时只清这些。布局还没重做（等阶段二全部测完再改）。
 
 ## 常用命令
 

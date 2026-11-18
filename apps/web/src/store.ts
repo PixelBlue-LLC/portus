@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import type { LangPref } from './i18n';
 import { t } from './i18n';
-import { DEFAULT_ACCOUNT, DEFAULT_RULES, type CashByAccount, type ConcentrationRule, type Holding, type NewsItem, type Quote, type SectorPerf } from 'portus-core';
+import { DEFAULT_ACCOUNT, DEFAULT_RULES, type AlertRule, type CashByAccount, type ConcentrationRule, type DailyBar, type Holding, type NewsItem, type OptionContract, type Plan, type Quote, type SectorPerf } from 'portus-core';
 
 export type ThemePref = 'system' | 'light' | 'dark';
 
@@ -17,6 +17,8 @@ export interface Settings {
   accountView: 'merged' | 'split';
   /** 界面语言；auto = 跟随浏览器 */
   lang: LangPref;
+  /** Twelve Data 的 key，用来拉日线算相关性 */
+  twelveDataKey: string;
 }
 
 export interface MarketCache {
@@ -27,6 +29,8 @@ export interface MarketCache {
   earnings: Record<string, string>;
   /** 代码 → Finnhub 行业（ETF 等没有的记成空串，避免重复请求） */
   industries: Record<string, string>;
+  /** 代码 → 财报时段 bmo / amc / dmh */
+  earningsHour?: Record<string, string>;
   fetchedAt?: string;
   errors: string[];
 }
@@ -53,6 +57,35 @@ export interface AppState {
   translations?: Record<string, string>;
   /** 正在翻译新闻 */
   translating?: boolean;
+  /** 用户自己设的提醒规则 */
+  alerts: AlertRule[];
+  /** 分批计划和挂单记录 */
+  plans: Plan[];
+  /** 用户自己填的 ETF 成分表：ETF 代码 → [代码, 权重%] */
+  etfCustom: Record<string, Array<[string, number]>>;
+  /** 想看相关性的候选代码（不一定持有） */
+  candidates: string[];
+  /** 日线缓存，按天刷新 */
+  history: HistoryCache;
+  historyLoading?: boolean;
+  /** 导入的期权链：标的 → 合约 */
+  chains: Record<string, ChainCache>;
+  /** 首次使用引导已关掉 */
+  welcomeDismissed?: boolean;
+}
+
+export interface HistoryCache {
+  bars: Record<string, DailyBar[]>;
+  /** 每只代码哪天拉的（YYYY-MM-DD），同一天不重复拉 */
+  fetchedOn: Record<string, string>;
+  errors: string[];
+}
+
+export interface ChainCache {
+  contracts: OptionContract[];
+  importedAt: string;
+  /** 导入时填的现价（没有行情时用） */
+  spot?: number;
 }
 
 const KEY = 'portus:v1';
@@ -87,9 +120,11 @@ export const DEFAULT_SETTINGS: Settings = {
   rules: DEFAULT_RULES,
   accountView: 'merged',
   lang: 'auto',
+  twelveDataKey: '',
 };
 
 const EMPTY_MARKET: MarketCache = { quotes: {}, sectors: [], news: [], earnings: {}, industries: {}, errors: [] };
+const EMPTY_HISTORY: HistoryCache = { bars: {}, fetchedOn: {}, errors: [] };
 
 const OLD_DEFAULT_MODELS = ['claude-haiku-4-5'];
 
@@ -98,7 +133,21 @@ function migrateSettings(s: Settings): Settings {
 }
 
 function load(): AppState {
-  const base: AppState = { holdings: [], cashByAccount: {}, settings: DEFAULT_SETTINGS, market: EMPTY_MARKET, checklist: {}, chat: [], loading: false };
+  const base: AppState = {
+    holdings: [],
+    cashByAccount: {},
+    settings: DEFAULT_SETTINGS,
+    market: EMPTY_MARKET,
+    checklist: {},
+    chat: [],
+    loading: false,
+    alerts: [],
+    plans: [],
+    etfCustom: {},
+    candidates: [],
+    history: EMPTY_HISTORY,
+    chains: {},
+  };
   try {
     const raw = readSaved();
     if (!raw) return base;
@@ -112,7 +161,9 @@ function load(): AppState {
       cashByAccount: saved.cashByAccount ?? legacyCash,
       settings: migrateSettings({ ...DEFAULT_SETTINGS, ...saved.settings }),
       market: { ...EMPTY_MARKET, ...saved.market },
+      history: { ...EMPTY_HISTORY, ...saved.history },
       loading: false,
+      historyLoading: false,
     };
   } catch {
     return base;
@@ -124,7 +175,7 @@ const listeners = new Set<() => void>();
 
 function persist() {
   try {
-    const { loading: _loading, translating: _translating, ...rest } = state;
+    const { loading: _loading, translating: _translating, historyLoading: _hl, ...rest } = state;
     localStorage.setItem(KEY, JSON.stringify(rest));
   } catch {
     // 隐私模式或存储已满时不影响使用，只是刷新后不保留
@@ -160,11 +211,15 @@ export function useAppState(): AppState {
   );
 }
 
-/** 导出备份：持仓、现金、设置（可选是否带 key） */
+/** 导出备份：持仓、现金、设置、提醒、计划（可选是否带 key） */
 export function exportBackup(includeKeys: boolean): string {
-  const { holdings, cashByAccount, settings, checklist } = state;
-  const s = includeKeys ? settings : { ...settings, finnhubKey: '', anthropicKey: '' };
-  return JSON.stringify({ app: 'portus', version: 2, exportedAt: new Date().toISOString(), holdings, cashByAccount, settings: s, checklist }, null, 2);
+  const { holdings, cashByAccount, settings, checklist, alerts, plans, etfCustom, candidates } = state;
+  const s = includeKeys ? settings : { ...settings, finnhubKey: '', anthropicKey: '', twelveDataKey: '' };
+  return JSON.stringify(
+    { app: 'portus', version: 3, exportedAt: new Date().toISOString(), holdings, cashByAccount, settings: s, checklist, alerts, plans, etfCustom, candidates },
+    null,
+    2,
+  );
 }
 
 export function importBackup(text: string): void {
@@ -173,22 +228,56 @@ export function importBackup(text: string): void {
   setState((s) => ({
     holdings: data.holdings ?? [],
     cashByAccount: data.cashByAccount ?? (typeof data.cash === 'number' && data.cash > 0 ? { [DEFAULT_ACCOUNT]: data.cash } : {}),
-    settings: { ...s.settings, ...data.settings, finnhubKey: data.settings?.finnhubKey || s.settings.finnhubKey, anthropicKey: data.settings?.anthropicKey || s.settings.anthropicKey },
+    settings: {
+      ...s.settings,
+      ...data.settings,
+      finnhubKey: data.settings?.finnhubKey || s.settings.finnhubKey,
+      anthropicKey: data.settings?.anthropicKey || s.settings.anthropicKey,
+      twelveDataKey: data.settings?.twelveDataKey || s.settings.twelveDataKey,
+    },
     checklist: data.checklist ?? {},
+    alerts: data.alerts ?? s.alerts,
+    plans: data.plans ?? s.plans,
+    etfCustom: data.etfCustom ?? s.etfCustom,
+    candidates: data.candidates ?? s.candidates,
     market: EMPTY_MARKET,
     attribution: undefined,
     isSample: false,
   }));
 }
 
-/** 用示例持仓看效果 */
+const isSampleItem = (x: { id: string }) => x.id.startsWith('sample-');
+
+/** 用示例持仓看效果；顺带放两条示例提醒和一个示例计划，退出示例时一起清掉 */
 export function loadSample() {
-  setState({ holdings: SAMPLE.holdings, cashByAccount: { [DEFAULT_ACCOUNT]: SAMPLE.cash }, isSample: true, attribution: undefined, chat: [] });
+  setState((s) => ({
+    holdings: SAMPLE.holdings,
+    cashByAccount: { [DEFAULT_ACCOUNT]: SAMPLE.cash },
+    isSample: true,
+    attribution: undefined,
+    chat: [],
+    alerts: [...s.alerts.filter((a) => !isSampleItem(a)), ...SAMPLE.alerts],
+    plans: [...s.plans.filter((p) => !isSampleItem(p)), ...SAMPLE.plans],
+  }));
 }
 
-/** 退出示例：清掉示例持仓和由它算出的内容，保留设置和 key */
+/** 退出示例：清掉示例持仓和由它算出的内容，保留设置、key 和用户自己加的提醒、计划 */
 export function exitSample() {
-  setState({ holdings: [], cashByAccount: {}, isSample: false, attribution: undefined, chat: [], checklist: {} });
+  setState((s) => ({
+    holdings: [],
+    cashByAccount: {},
+    isSample: false,
+    attribution: undefined,
+    chat: [],
+    checklist: {},
+    alerts: s.alerts.filter((a) => !isSampleItem(a)),
+    plans: s.plans.filter((p) => !isSampleItem(p)),
+  }));
+}
+
+/** 生成本地唯一 id */
+export function newId(prefix = ''): string {
+  return `${prefix}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
 }
 
 export function clearAll() {
@@ -199,7 +288,24 @@ export function clearAll() {
 }
 
 /** 示例持仓：虚构数据，方便第一次打开时看效果 */
-export const SAMPLE: { holdings: Holding[]; cash: number } = {
+export const SAMPLE: { holdings: Holding[]; cash: number; alerts: AlertRule[]; plans: Plan[] } = {
+  alerts: [
+    { id: 'sample-a1', type: 'weight_above', symbol: 'NVDA', value: 30 },
+    { id: 'sample-a2', type: 'price_below', symbol: 'MSFT', value: 400 },
+  ],
+  plans: [
+    {
+      id: 'sample-p1',
+      symbol: 'JNJ',
+      side: 'buy',
+      createdAt: '2026-11-10',
+      tranches: [
+        { id: 'sample-t1', date: '2026-11-12', amount: 600, limit: 152, status: 'filled', fillPrice: 151.4, fillQty: 4 },
+        { id: 'sample-t2', date: '2026-11-26', amount: 600, limit: 146, tif: 'gtc', status: 'placed' },
+        { id: 'sample-t3', date: '2026-12-10', amount: 600, status: 'planned' },
+      ],
+    },
+  ],
   // 示例没有行情 key 时也要能算市值，所以带了虚构的现价
   holdings: [
     { symbol: 'NVDA', qty: 30, costBasis: 92, manualPrice: 184 },

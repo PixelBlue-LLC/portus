@@ -4,7 +4,10 @@ import { refreshMarket, runAttribution } from '../actions';
 import type { Derived } from '../derived';
 import { ageMinutes, signedPct, signedUsd, timeLabel, usd } from '../format';
 import { getLang, t } from '../i18n';
-import { loadSample, type AppState } from '../store';
+import { loadSample, setState, type AppState } from '../store';
+import { EventLine, upcomingEvents } from './Calendar';
+import { overdueTranches, staleDayOrders } from 'portus-core';
+import { todayLocal } from '../actions';
 import { Card, ConcRow, HeatGrid, Money, Pct, Tile, tone } from '../ui';
 
 export function Today({ s, d }: { s: AppState; d: Derived }) {
@@ -46,6 +49,9 @@ export function Today({ s, d }: { s: AppState; d: Derived }) {
 
       {stale ? <div className="banner bad">{t('today.stale', { t: timeLabel(s.market.fetchedAt) })}</div> : null}
       {s.market.errors.length ? <div className="banner bad">{s.market.errors.join(t('common.sep'))}</div> : null}
+
+      <NextSteps s={s} />
+      <AlertsSummary s={s} d={d} />
 
       <section className="sec">
         <h1 className="headline">{d.headline}</h1>
@@ -97,6 +103,8 @@ export function Today({ s, d }: { s: AppState; d: Derived }) {
         <Tile label={t('tile.totalPnl')} value={<Money v={view.totalPnl} />} sub={t('tile.positions', { n: view.positions.length })} />
         <Tile label={t('tile.over')} value={t('tile.items', { n: d.over.length })} sub={t('tile.rules', { n: d.concentration.length })} />
       </div>
+
+      <UpcomingCard s={s} />
 
       <div className="grid2">
         <div className="col">
@@ -231,18 +239,30 @@ function Welcome() {
     <>
       <section className="sec" style={{ paddingTop: 24 }}>
         <h1 className="headline">{t('welcome.title')}</h1>
-        <p className="lead">
-          {t('welcome.lead')}
-        </p>
+        <p className="lead">{t('welcome.lead')}</p>
       </section>
+      <ol className="steps">
+        <li>
+          <strong>{t('welcome.s1')}</strong>
+          <span>{t('welcome.s1b')}</span>
+          <a className="btn primary small" href="#/holdings/edit">
+            {t('welcome.enter')}
+          </a>
+        </li>
+        <li>
+          <strong>{t('welcome.s2')}</strong>
+          <span>{t('welcome.s2b')}</span>
+          <a className="btn small" href="#/settings">
+            {t('common.goSettings')}
+          </a>
+        </li>
+        <li>
+          <strong>{t('welcome.s3')}</strong>
+          <span>{t('welcome.s3b')}</span>
+        </li>
+      </ol>
       <div className="row" style={{ padding: '0 6px' }}>
-        <a className="btn primary" href="#/holdings/edit">
-          {t('welcome.enter')}
-        </a>
-        <button
-          className="btn"
-          onClick={loadSample}
-        >
+        <button className="btn" onClick={loadSample}>
           {t('welcome.sample')}
         </button>
       </div>
@@ -250,5 +270,81 @@ function Welcome() {
         {t('welcome.notice')}
       </div>
     </>
+  );
+}
+
+/** 有持仓以后的「下一步」：还没接行情、还没设提醒时提示一次，可以关掉 */
+function NextSteps({ s }: { s: AppState }) {
+  if (s.welcomeDismissed || s.isSample) return null;
+  const todo: Array<{ key: string; text: string; href: string; link: string }> = [];
+  if (!s.settings.finnhubKey) todo.push({ key: 'k', text: t('next.key'), href: '#/settings', link: t('common.goSettings') });
+  if (!s.alerts.length) todo.push({ key: 'a', text: t('next.alerts'), href: '#/plans', link: t('next.alertsLink') });
+  if (!todo.length) return null;
+  return (
+    <div className="notice next-steps" role="note">
+      <div className="card-head">
+        <strong style={{ color: 'var(--ink)' }}>{t('next.title')}</strong>
+        <button className="linkbtn" onClick={() => setState({ welcomeDismissed: true })}>
+          {t('next.dismiss')}
+        </button>
+      </div>
+      <ul className="list">
+        {todo.map((x) => (
+          <li key={x.key}>
+            {x.text} <a href={x.href}>{x.link}</a>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** 触发了的提醒，以及分批计划里需要核对的批次 */
+function AlertsSummary({ s, d }: { s: AppState; d: Derived }) {
+  const today = todayLocal();
+  const active = s.plans.filter((p) => !p.archived);
+  const overdue = active.reduce((n, p) => n + overdueTranches(p, today).length, 0);
+  const stale = active.reduce((n, p) => n + staleDayOrders(p, today).length, 0);
+  if (!d.alertHits.length && !overdue && !stale) return null;
+  return (
+    <Card className="alert-card">
+      <div className="card-head">
+        <h2>{d.alertHits.length ? t('alerts.hitTitle', { n: d.alertHits.length }) : t('alerts.planTitle')}</h2>
+        <a href="#/plans" style={{ fontSize: 14 }}>
+          {t('alerts.manage')}
+        </a>
+      </div>
+      <ul className="list" style={{ fontSize: 14 }}>
+        {d.alertHits.map((h) => (
+          <li key={h.id + h.subject}>{h.text}</li>
+        ))}
+        {overdue ? <li>{t('plan.overdue', { n: overdue })}</li> : null}
+        {stale ? <li>{t('plan.staleDay', { n: stale })}</li> : null}
+      </ul>
+    </Card>
+  );
+}
+
+/** 未来 7 天的事件 */
+function UpcomingCard({ s }: { s: AppState }) {
+  const events = upcomingEvents(s, 7).slice(0, 6);
+  if (!events.length) return null;
+  return (
+    <Card>
+      <div className="card-head">
+        <h2>{t('today.week')}</h2>
+        <a href="#/calendar" style={{ fontSize: 14 }}>
+          {t('today.weekAll')}
+        </a>
+      </div>
+      <div className="ev-list">
+        {events.map((e) => (
+          <div key={e.date + e.kind + (e.symbol ?? '')} className="ev-row">
+            <span className="label ev-d">{e.date.slice(5)}</span>
+            <EventLine e={e} />
+          </div>
+        ))}
+      </div>
+    </Card>
   );
 }

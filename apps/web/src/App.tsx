@@ -5,7 +5,10 @@ import { timeLabel } from './format';
 import { Ask } from './pages/Ask';
 import { Holdings, HoldingsEditor } from './pages/Holdings';
 import { Market } from './pages/Market';
+import { Calendar } from './pages/Calendar';
 import { Options } from './pages/Options';
+import { Plans } from './pages/Plans';
+import { Risk } from './pages/Risk';
 import { Settings } from './pages/Settings';
 import { Today } from './pages/Today';
 import { resolveLang, setLang, t, type MsgKey } from './i18n';
@@ -14,7 +17,10 @@ import { exitSample, updateSettings, useAppState } from './store';
 const TABS: ReadonlyArray<{ path: string; label: MsgKey }> = [
   { path: '/', label: 'nav.today' },
   { path: '/holdings', label: 'nav.holdings' },
+  { path: '/risk', label: 'nav.risk' },
   { path: '/market', label: 'nav.market' },
+  { path: '/calendar', label: 'nav.calendar' },
+  { path: '/plans', label: 'nav.plans' },
   { path: '/options', label: 'nav.options' },
   { path: '/ask', label: 'nav.ask' },
 ];
@@ -53,17 +59,23 @@ export function App() {
   if (route === '/holdings/edit') page = <HoldingsEditor s={s} />;
   else if (route.startsWith('/holdings')) page = <Holdings s={s} d={d} />;
   else if (route.startsWith('/market')) page = <Market s={s} d={d} />;
-  else if (route.startsWith('/options')) page = <Options s={s} />;
+  else if (route.startsWith('/risk')) page = <Risk s={s} d={d} />;
+  else if (route.startsWith('/calendar')) page = <Calendar s={s} />;
+  else if (route.startsWith('/plans')) page = <Plans s={s} d={d} />;
+  else if (route.startsWith('/options')) page = <Options s={s} d={d} />;
   else if (route.startsWith('/ask')) page = <Ask s={s} d={d} />;
   else if (route.startsWith('/settings')) page = <Settings s={s} />;
   else page = <Today s={s} d={d} />;
 
   return (
     <div className="shell">
+      <a className="skip" href="#main" onClick={(e) => { e.preventDefault(); document.getElementById('main')?.focus(); }}>
+        {t('a11y.skip')}
+      </a>
       <nav className="side" aria-label={t('nav.main')}>
         <span className="brand">{APP_NAME}</span>
         {TABS.map((tab) => (
-          <a key={tab.path} href={`#${tab.path}`} className={`navlink ${active(tab.path) ? 'active' : ''}`}>
+          <a key={tab.path} href={`#${tab.path}`} className={`navlink ${active(tab.path) ? 'active' : ''}`} aria-current={active(tab.path) ? 'page' : undefined}>
             {t(tab.label)}
           </a>
         ))}
@@ -80,7 +92,7 @@ export function App() {
           </button>
         </span>
       </nav>
-      <main className="main">
+      <main className="main" id="main" tabIndex={-1}>
         {s.isSample && route !== '/holdings/edit' ? (
           <div className="sample-bar" role="status">
             <span>{t('sample.viewing')}</span>
@@ -110,7 +122,7 @@ export function App() {
       </main>
       <nav className="tabbar" aria-label={t('nav.main')}>
         {TABS.map((tab) => (
-          <a key={tab.path} href={`#${tab.path}`} className={active(tab.path) ? 'active' : ''}>
+          <a key={tab.path} href={`#${tab.path}`} className={active(tab.path) ? 'active' : ''} aria-current={active(tab.path) ? 'page' : undefined}>
             {t(tab.label)}
           </a>
         ))}

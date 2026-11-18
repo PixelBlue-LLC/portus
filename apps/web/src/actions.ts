@@ -1,4 +1,4 @@
-import { attributionPrompt, askPrompt, TRANSLATE_SYSTEM_PROMPT } from 'portus-core';
+import { alertSymbols, attributionPrompt, askPrompt, TRANSLATE_SYSTEM_PROMPT } from 'portus-core';
 import { askClaude } from './data/anthropic';
 import { fetchMarket } from './data/finnhub';
 import { getLang, t } from './i18n';
@@ -9,9 +9,20 @@ export async function refreshMarket(): Promise<void> {
   if (!s.settings.finnhubKey || s.loading) return;
   setState({ loading: true });
   try {
-    const r = await fetchMarket(s.holdings.map((h) => h.symbol), s.settings.finnhubKey, s.market.industries ?? {});
+    // 提醒、计划、相关性候选里的代码也要报价
+    const extra = [...alertSymbols(s.alerts), ...s.plans.filter((p) => !p.archived).map((p) => p.symbol), ...s.candidates];
+    const r = await fetchMarket(s.holdings.map((h) => h.symbol), s.settings.finnhubKey, s.market.industries ?? {}, extra);
     setState({
-      market: { quotes: r.quotes, sectors: r.sectors, news: r.news, earnings: r.earnings, industries: { ...s.market.industries, ...r.industries }, errors: r.errors, fetchedAt: new Date().toISOString() },
+      market: {
+        quotes: r.quotes,
+        sectors: r.sectors,
+        news: r.news,
+        earnings: r.earnings,
+        earningsHour: r.earningsHour,
+        industries: { ...s.market.industries, ...r.industries },
+        errors: r.errors,
+        fetchedAt: new Date().toISOString(),
+      },
       attribution: undefined,
     });
   } catch (e) {
@@ -81,5 +92,36 @@ export async function translateTitles(titles: string[]): Promise<string | null> 
     return e instanceof Error ? e.message : String(e);
   } finally {
     setState({ translating: false });
+  }
+}
+
+/** 本地日期 YYYY-MM-DD（按浏览器所在时区） */
+export function todayLocal(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/**
+ * 拉日线：只拉今天还没拉过的代码。没有 Twelve Data key 时什么也不做。
+ * onProgress 用来在页面上显示「第几批」。
+ */
+export async function refreshHistory(symbols: string[], onProgress?: (done: number, total: number) => void): Promise<void> {
+  const s = getState();
+  const key = s.settings.twelveDataKey;
+  if (!key || s.historyLoading) return;
+  const today = todayLocal();
+  const todo = [...new Set(symbols.map((x) => x.toUpperCase()))].filter((x) => s.history.fetchedOn[x] !== today);
+  if (!todo.length) return;
+  setState({ historyLoading: true });
+  try {
+    const { fetchDaily } = await import('./data/twelvedata');
+    const r = await fetchDaily(todo, key, onProgress);
+    setState((st) => {
+      const fetchedOn = { ...st.history.fetchedOn };
+      for (const sym of Object.keys(r.bars)) fetchedOn[sym] = today;
+      return { history: { bars: { ...st.history.bars, ...r.bars }, fetchedOn, errors: r.errors } };
+    });
+  } finally {
+    setState({ historyLoading: false });
   }
 }
