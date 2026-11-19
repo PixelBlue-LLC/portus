@@ -203,12 +203,25 @@ function CorrelationCard({ s, d }: { s: AppState; d: Derived }) {
   const [progress, setProgress] = useState('');
   const [cand, setCand] = useState('');
   const [order, setOrder] = useState<CorrOrder>('cluster');
-  const [withWatch, setWithWatch] = useState(true);
   const [hover, setHover] = useState<[number, number] | null>(null);
-  const held = d.view.positions.filter((p) => !p.noQuote).slice(0, MAX_CORR_HOLDINGS).map((p) => p.symbol);
-  const watch = withWatch ? (s.watchlist ?? []).map((w) => w.symbol) : [];
-  const extra = [...s.candidates, ...watch].filter((x) => !held.includes(x));
+  const off = new Set(s.corrOff ?? []);
+  // 三个来源：持仓（仓位最大的 12 只）、观望列表、手动加的；持仓和观望可以逐个点掉
+  const heldAll = d.view.positions.filter((p) => !p.noQuote).slice(0, MAX_CORR_HOLDINGS).map((p) => p.symbol);
+  const watchAll = (s.watchlist ?? []).map((w) => w.symbol).filter((x) => !heldAll.includes(x));
+  const manual = s.candidates.filter((x) => !heldAll.includes(x) && !watchAll.includes(x));
+  const held = heldAll.filter((x) => !off.has(x));
+  const extra = [...watchAll.filter((x) => !off.has(x)), ...manual];
   const symbols = [...new Set([...held, ...extra])];
+  const toggle = (x: string) => setState((st) => ({ corrOff: off.has(x) ? (st.corrOff ?? []).filter((y) => y !== x) : [...(st.corrOff ?? []), x] }));
+  const addManual = () => {
+    const sym = cand.trim().toUpperCase();
+    setCand('');
+    if (!/^[A-Z][A-Z0-9.\-]{0,9}$/.test(sym) || symbols.includes(sym)) return;
+    if (off.has(sym)) return toggle(sym);
+    setState((st) => ({ candidates: [...st.candidates, sym] }));
+    // 有 Twelve Data key 就顺手把这一只的日线拉下来（1 次请求）
+    if (s.settings.twelveDataKey && !s.history.fetchedOn[sym]) void refreshHistory([sym]);
+  };
   const m = useMemo(() => correlationMatrix(s.history.bars, symbols), [s.history.bars, symbols.join(',')]);
   const pairs = topPairs(m, 3).filter((p) => held.includes(p.a) && held.includes(p.b));
   const weights = Object.fromEntries(d.view.positions.map((p) => [p.symbol, p.marketValue]));
@@ -261,12 +274,53 @@ function CorrelationCard({ s, d }: { s: AppState; d: Derived }) {
             </button>
           ))}
         </div>
-        {(s.watchlist ?? []).length ? (
-          <label className="row" style={{ gap: 6, fontSize: 13 }}>
-            <input type="checkbox" checked={withWatch} onChange={(e) => setWithWatch(e.target.checked)} />
-            {t('corr.withWatch', { n: (s.watchlist ?? []).length })}
-          </label>
+      </div>
+
+      {/* 比较哪些股票：持仓、观望可以点掉，也可以手动加别的代码 */}
+      <div className="corr-pick">
+        <div className="pick-row">
+          <span className="label pick-label">{t('corr.pickHeld')}</span>
+          {heldAll.map((x) => (
+            <button key={x} className={`acct-chip ${off.has(x) ? '' : 'on'}`} aria-pressed={!off.has(x)} onClick={() => toggle(x)}>
+              {x}
+            </button>
+          ))}
+        </div>
+        {watchAll.length ? (
+          <div className="pick-row">
+            <span className="label pick-label">{t('corr.pickWatch')}</span>
+            {watchAll.map((x) => (
+              <button key={x} className={`acct-chip ${off.has(x) ? '' : 'on'}`} aria-pressed={!off.has(x)} onClick={() => toggle(x)}>
+                {x}
+              </button>
+            ))}
+          </div>
         ) : null}
+        <div className="pick-row">
+          <span className="label pick-label">{t('corr.pickManual')}</span>
+          {manual.map((x) => (
+            <span key={x} className="acct-chip on" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              {x}
+              <button className="linkbtn" aria-label={t('corr.removeSym', { s: x })} onClick={() => setState((st) => ({ candidates: st.candidates.filter((y) => y !== x) }))}>
+                ×
+              </button>
+            </span>
+          ))}
+          <form
+            className="row"
+            style={{ gap: 6 }}
+            onSubmit={(e) => {
+              e.preventDefault();
+              addManual();
+            }}
+          >
+            <input className="input" style={{ width: 110, minHeight: 34, fontSize: 14 }} value={cand} onChange={(e) => setCand(e.target.value)} placeholder="TSLA" aria-label={t('corr.candTitle')} />
+            <button className="btn small" type="submit" disabled={!cand.trim()}>
+              {t('common.add')}
+            </button>
+          </form>
+        </div>
+        <span className="label">{t('corr.pickHelp', { n: MAX_CORR_HOLDINGS })}</span>
       </div>
 
       {/* 横纵热力图：没有数据时也画出格子，让人知道会看到什么 */}
@@ -331,20 +385,6 @@ function CorrelationCard({ s, d }: { s: AppState; d: Derived }) {
 
       <div className="col" style={{ gap: 8 }}>
         <span className="label" style={{ fontWeight: 600 }}>{t('corr.candTitle')}</span>
-        <form
-          className="row"
-          onSubmit={(e) => {
-            e.preventDefault();
-            const sym = cand.trim().toUpperCase();
-            if (/^[A-Z][A-Z0-9.\-]{0,9}$/.test(sym) && !s.candidates.includes(sym)) setState((st) => ({ candidates: [...st.candidates, sym] }));
-            setCand('');
-          }}
-        >
-          <input className="input" style={{ maxWidth: 140 }} value={cand} onChange={(e) => setCand(e.target.value)} placeholder="TSLA" aria-label={t('corr.candTitle')} />
-          <button className="btn small" type="submit">
-            {t('common.add')}
-          </button>
-        </form>
         {extra.length ? (
           <ul className="list" style={{ fontSize: 14 }}>
             {extra.map((c) => {
@@ -352,13 +392,7 @@ function CorrelationCard({ s, d }: { s: AppState; d: Derived }) {
               return (
                 <li key={c}>
                   {w == null ? t('corr.candNoData', { sym: c }) : t('corr.cand', { sym: c, v: w.toFixed(2) })}{' '}
-                  {s.candidates.includes(c) ? (
-                    <button className="linkbtn" onClick={() => setState((st) => ({ candidates: st.candidates.filter((x) => x !== c) }))}>
-                      {t('common.remove')}
-                    </button>
-                  ) : (
-                    <span className="label">{t('corr.fromWatch')}</span>
-                  )}
+                  {watchAll.includes(c) ? <span className="label">{t('corr.fromWatch')}</span> : null}
                 </li>
               );
             })}

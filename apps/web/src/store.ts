@@ -85,6 +85,8 @@ export interface AppState {
   welcomeDismissed?: boolean;
   /** 板块的 AI 解读：ETF 代码 → 解读文字和时间 */
   sectorNotes?: Record<string, { text: string; at: string }>;
+  /** 相关性热力图里暂时不看的代码（持仓或观望里点掉的） */
+  corrOff?: string[];
   /** 观望列表：没持有、但在看的股票 */
   watchlist?: WatchItem[];
 }

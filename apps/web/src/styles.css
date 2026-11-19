@@ -442,3 +442,6 @@ a:focus-visible, button:focus-visible, select:focus-visible, .acct-chip:focus-vi
 .hm-legend { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); max-width: 320px; }
 .hm-legend i { flex: 1; height: 8px; border-radius: 4px; background: linear-gradient(to right, #1c7ed6, var(--line2)); }
 .hm-legend i.pos { background: linear-gradient(to right, var(--line2), #e8590c); }
+.corr-pick { display: flex; flex-direction: column; gap: 8px; }
+.pick-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.pick-label { min-width: 48px; }
