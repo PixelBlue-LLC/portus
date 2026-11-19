@@ -23,6 +23,8 @@ import { num, usd } from '../format';
 import { getLang, t } from '../i18n';
 import { setState, updateSettings, type AppState } from '../store';
 import { Card, ConcRow, Money } from '../ui';
+import { QuoteLink } from './Sectors';
+import { WatchlistCard } from './Watchlist';
 
 const PALETTE = ['var(--accent)', 'color-mix(in srgb, var(--accent) 65%, var(--card))', 'var(--warn)', 'color-mix(in srgb, var(--muted) 80%, var(--card))', 'color-mix(in srgb, var(--muted) 50%, var(--card))', 'color-mix(in srgb, var(--muted) 30%, var(--card))'];
 
@@ -91,7 +93,7 @@ function chg(abs: number | null, pct: number | null): ReactNode {
  * 宽屏的持仓表。相关的数字放在同一列上下两行，和券商（Schwab 的 Price / Price Chng $ / Price Chng %）一样：
  * 现价 + 涨跌，市值 + 当日盈亏，总成本 + 均价，未实现盈亏 $ + %。涨跌一律涨绿跌红（颜色约定可在设置里换）。
  */
-function HoldingsTable({ positions, cash, showAccounts }: { positions: Position[]; cash: number; showAccounts: boolean }) {
+function HoldingsTable({ s, positions, cash, showAccounts }: { s: AppState; positions: Position[]; cash: number; showAccounts: boolean }) {
   const lang = getLang();
   const sum = (f: (p: Position) => number) => positions.reduce((a, p) => a + f(p), 0);
   const quoted = positions.filter((p) => !p.noQuote);
@@ -125,7 +127,7 @@ function HoldingsTable({ positions, cash, showAccounts }: { positions: Position[
             return (
               <tr key={p.symbol}>
                 <th scope="row">
-                  <span className="sym" title={p.noQuote ? label(p) : p.name}>{label(p)}</span>
+                  <span className="sym" title={p.noQuote ? label(p) : p.name}>{p.noQuote ? label(p) : <QuoteLink s={s} symbol={p.symbol} />}</span>
                   <span className="sub">{sub}</span>
                 </th>
                 <td className="num"><span className="m">{qtyText(p.qty)}</span><span className="s">&nbsp;</span></td>
@@ -298,12 +300,12 @@ export function Holdings({ s, d }: { s: AppState; d: Derived }) {
                   })}
                 </span>
               </div>
-              <HoldingsTable positions={av.positions} cash={av.cash} showAccounts={false} />
+              <HoldingsTable s={s} positions={av.positions} cash={av.cash} showAccounts={false} />
             </Card>
           ))
         ) : (
           <Card>
-            <HoldingsTable positions={view.positions} cash={view.cash} showAccounts={multi} />
+            <HoldingsTable s={s} positions={view.positions} cash={view.cash} showAccounts={multi} />
           </Card>
         )}
       </div>
@@ -346,6 +348,7 @@ export function Holdings({ s, d }: { s: AppState; d: Derived }) {
               {t('hold.concNote')}
             </span>
           </Card>
+          <WatchlistCard s={s} d={d} />
           <div className="notice">
             {t('ht.note')}
             {view.positions.some((p) => p.noQuote) ? <> {t('ht.noteNoQuote')}</> : null}

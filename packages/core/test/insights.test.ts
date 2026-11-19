@@ -3,6 +3,8 @@ import {
   attributionFacts,
   attributionFallback,
   attributionPrompt,
+  sectorPrompt,
+  violatesAdvicePolicy as _vap,
   buildPortfolio,
   computeConcentration,
   headline,
@@ -80,5 +82,33 @@ describe('AI 输出检查', () => {
   });
   it.each(['半导体主题亏损占 80%', 'NVDA 今天下跌 8.12%', '新闻里没有明确原因'])('放行：%s', (t) => {
     expect(violatesAdvicePolicy(t)).toBe(false);
+  });
+});
+
+describe('板块解读的提示词', () => {
+  const facts = {
+    etf: 'XLE',
+    name: '能源',
+    changePct: -3.27,
+    coveredPct: 78.7,
+    movers: [
+      { symbol: 'XOM', weight: 24.3, changePct: -4.1, contribution: -0.99 },
+      { symbol: 'CVX', weight: 18.5, changePct: null, contribution: null },
+    ],
+    news: { XOM: ['Oil falls as supply rises'] },
+  };
+  it('只给事实数据，并要求不给建议、不预测', () => {
+    const zh = sectorPrompt(facts, 'zh');
+    expect(zh).toContain('XOM：权重 24.3%，今天 -4.10%，贡献 -0.99 个百分点');
+    expect(zh).toContain('CVX：权重 18.5%，没有今天的报价');
+    expect(zh).toContain('不要给任何操作建议');
+    expect(zh).toContain('XOM: Oil falls as supply rises');
+    const en = sectorPrompt({ ...facts, name: 'Energy', news: {} }, 'en');
+    expect(en).toContain('Do not predict');
+    expect(en).toContain('No headlines were available');
+  });
+  it('提示词本身不含指令性措辞', () => {
+    expect(_vap(sectorPrompt(facts, 'zh'))).toBe(false);
+    expect(_vap(sectorPrompt(facts, 'en'))).toBe(false);
   });
 });

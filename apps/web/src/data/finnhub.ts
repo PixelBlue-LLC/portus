@@ -9,8 +9,27 @@ const BASE = 'https://finnhub.io/api/v1';
 
 export class SourceError extends Error {}
 
-async function get<T>(path: string, params: Record<string, string>, key: string): Promise<T> {
+/**
+ * 免费档每分钟 60 次。所有请求先过这里排队：最近 60 秒内已经发了 LIMIT 次就等到最早那次满 60 秒。
+ * 留几次余量给同一个 key 在别处的使用。
+ */
+const LIMIT = 55;
+const sent: number[] = [];
+async function slot(): Promise<void> {
+  for (;;) {
+    const now = Date.now();
+    while (sent.length && now - sent[0]! >= 60000) sent.shift();
+    if (sent.length < LIMIT) {
+      sent.push(now);
+      return;
+    }
+    await new Promise((r) => setTimeout(r, 60000 - (now - sent[0]!) + 50));
+  }
+}
+
+async function get<T>(path: string, params: Record<string, string>, key: string, retried = false): Promise<T> {
   const qs = new URLSearchParams({ ...params, token: key }).toString();
+  await slot();
   let res: Response;
   try {
     res = await fetch(`${BASE}${path}?${qs}`);
@@ -18,6 +37,11 @@ async function get<T>(path: string, params: Record<string, string>, key: string)
     throw new SourceError(t('err.finnhubNet'));
   }
   if (res.status === 401 || res.status === 403) throw new SourceError(t('err.finnhubKey'));
+  // 被限流（同一个 key 在别处也在用）：等一会儿再试一次
+  if (res.status === 429 && !retried) {
+    await new Promise((r) => setTimeout(r, 15000));
+    return get<T>(path, params, key, true);
+  }
   if (res.status === 429) throw new SourceError(t('err.finnhubRate'));
   if (!res.ok) throw new SourceError(t('err.finnhubStatus', { s: res.status }));
   return (await res.json()) as T;
@@ -47,6 +71,8 @@ interface FhProfile { finnhubIndustry?: string; name?: string }
 interface FhEarnings { earningsCalendar?: Array<{ date: string; symbol: string; hour?: string }> }
 
 const ymd = (d: Date) => d.toISOString().slice(0, 10);
+export const NEWS_DAYS = 15;
+export const NEWS_PER_SYMBOL = 10;
 
 export interface MarketFetch {
   quotes: Record<string, Quote>;
@@ -61,6 +87,21 @@ export interface MarketFetch {
 
 function toQuote(s: string, r: FhQuote): Quote {
   return { symbol: s, price: r.c, changePct: r.dp, prevClose: r.pc, asOf: new Date((r.t || Date.now() / 1000) * 1000).toISOString() };
+}
+
+/** 几只股票最近几天的新闻标题（板块解读用），每只最多 n 条 */
+export async function fetchHeadlines(symbols: string[], key: string, days = 2, n = 3): Promise<Record<string, string[]>> {
+  const to = new Date();
+  const from = new Date(to.getTime() - days * 864e5);
+  const res = await pool(symbols, 3, (s) => get<FhNews[]>('/company-news', { symbol: s, from: ymd(from), to: ymd(to) }, key));
+  const out: Record<string, string[]> = {};
+  symbols.forEach((s, i) => {
+    const r = res[i];
+    if (!r || r instanceof Error) return;
+    const titles = r.sort((a, b) => b.datetime - a.datetime).slice(0, n).map((x) => x.headline);
+    if (titles.length) out[s] = titles;
+  });
+  return out;
 }
 
 /** 只拉报价（持仓 + 板块 ETF + 额外代码），给自动刷新用：每只 1 次请求，不碰新闻和财报 */
@@ -116,7 +157,8 @@ export async function fetchMarket(symbols: string[], key: string, knownIndustrie
     .map((s) => ({ symbol: s, name: SECTOR_ETFS[s]!, changePct: quotes[s]!.changePct! }));
 
   const to = new Date();
-  const from = new Date(to.getTime() - 4 * 864e5);
+  // 每只持仓：最近 15 天，最多 10 条
+  const from = new Date(to.getTime() - NEWS_DAYS * 864e5);
   const newsRes = await pool(uniq, 4, (s) => get<FhNews[]>('/company-news', { symbol: s, from: ymd(from), to: ymd(to) }, key));
   const cutoff = from.getTime();
   const news: NewsItem[] = [];
@@ -124,8 +166,8 @@ export async function fetchMarket(symbols: string[], key: string, knownIndustrie
     const r = newsRes[i];
     note(r);
     if (!r || r instanceof Error) return;
-    for (const n of r.slice(0, 5)) {
-      if (n.datetime * 1000 < cutoff) continue;
+    const recent = r.filter((n) => n.datetime * 1000 >= cutoff).sort((a, b) => b.datetime - a.datetime);
+    for (const n of recent.slice(0, NEWS_PER_SYMBOL)) {
       news.push({ symbol: s, title: n.headline, source: n.source, url: n.url, publishedAt: new Date(n.datetime * 1000).toISOString(), summary: n.summary });
     }
   });

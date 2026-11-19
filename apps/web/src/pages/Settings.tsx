@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { DEFAULT_RULES, ruleLabel } from 'portus-core';
 import { refreshMarket } from '../actions';
+import { QUOTE_SITES } from '../links';
 import { APP_NAME, REPO_URL } from '../brand';
 import { clearAll, exportBackup, importBackup, updateSettings, type AppState, type ThemePref } from '../store';
 import { getLang, t, type LangPref } from '../i18n';
@@ -79,6 +80,16 @@ export function Settings({ s }: { s: AppState }) {
                 <option value="auto">{t('set.langAuto')}</option>
                 <option value="zh">中文</option>
                 <option value="en">English</option>
+              </select>
+            </label>
+            <label className="field">
+              <span>{t('set.quoteSite')}</span>
+              <select className="input" value={st.quoteSite} onChange={(e) => updateSettings({ quoteSite: e.target.value as typeof st.quoteSite })}>
+                {Object.entries(QUOTE_SITES).map(([k, v]) => (
+                  <option key={k} value={k}>
+                    {v}
+                  </option>
+                ))}
               </select>
             </label>
             <label className="field">

@@ -365,3 +365,52 @@ a:focus-visible, button:focus-visible, select:focus-visible, .acct-chip:focus-vi
   .mv-row.head span:last-child { text-align: right; }
 }
 .warn-text { color: var(--warn-text); }
+.qlink { color: inherit; text-decoration: none; border-bottom: 1px dotted var(--muted); }
+.qlink:hover { color: var(--link); border-bottom-color: var(--link); }
+.sym-chip { font-weight: 700; font-size: 12px; border-bottom: none; }
+.sec-ai { display: flex; flex-direction: column; gap: 8px; padding-top: 8px; border-top: 1px solid var(--line2); }
+.news-group { gap: 4px; }
+.news-item { display: flex; flex-direction: column; gap: 3px; padding: 10px 0; border-top: 1px solid var(--line2); text-decoration: none; color: inherit; }
+.news-item:hover .news-title { color: var(--link); }
+.news-title { font-size: 15px; font-weight: 600; line-height: 1.45; }
+.news-sum { font-size: 13px; line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* ---------- 日历：时间、周 / 月格子 ---------- */
+.ev-time { font-variant-numeric: tabular-nums; font-weight: 600; color: var(--ink); min-width: 78px; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.cal-head { font-size: 11px; color: var(--muted); text-align: center; padding-bottom: 2px; }
+.cal-cell {
+  display: flex; flex-direction: column; gap: 3px; align-items: stretch; text-align: left; min-width: 0;
+  padding: 6px; border: 1px solid var(--line2); border-radius: 8px; background: none; color: inherit; font: inherit; cursor: pointer;
+}
+.cal-grid.month .cal-cell { min-height: 84px; }
+.cal-grid.week .cal-cell { min-height: 160px; }
+.cal-cell.out { opacity: 0.45; }
+.cal-cell.today { border-color: var(--accent); }
+.cal-cell.on { background: var(--line2); }
+.cal-num { font-size: 12px; font-weight: 700; }
+.cal-ev { font-size: 11px; line-height: 1.3; padding: 1px 4px; border-radius: 4px; background: var(--chip); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cal-ev b { font-weight: 600; }
+.cal-ev.earnings { color: var(--accent); }
+.cal-ev.fomc, .cal-ev.cpi, .cal-ev.jobs { color: var(--warn-text); }
+.cal-ev.closed, .cal-ev.early_close { color: var(--muted); }
+.cal-more { font-size: 11px; color: var(--muted); }
+@media (max-width: 640px) {
+  .cal-grid.month .cal-cell { min-height: 56px; padding: 4px; }
+  .cal-grid.month .cal-ev { font-size: 0; padding: 0; height: 5px; border-radius: 3px; background: currentColor; }
+  .cal-grid.month .cal-ev b { display: none; }
+  .cal-grid.week { grid-template-columns: 1fr; }
+  .cal-grid.week .cal-head { display: none; }
+  .cal-grid.week .cal-cell { min-height: 0; }
+}
+
+/* ---------- 观望列表 ---------- */
+.watch-list { display: flex; flex-direction: column; }
+.watch-row { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr) 40px; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line2); font-variant-numeric: tabular-nums; }
+.watch-row .num { text-align: right; display: flex; flex-direction: column; }
+.watch-row .m { font-size: 14px; font-weight: 600; }
+.watch-row .s { font-size: 12px; }
+.w-sym { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-weight: 700; min-width: 0; }
+.w-note { font-weight: 400; flex-basis: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.watch-add { display: grid; grid-template-columns: 110px minmax(0, 1fr) auto; gap: 6px; }
+.watch-add .input { min-height: 36px; font-size: 14px; }

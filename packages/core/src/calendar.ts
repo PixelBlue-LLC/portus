@@ -72,8 +72,19 @@ export interface MarketEvent {
   kind: EventKind;
   /** 美东时间 HH:MM；没有就是全天 */
   time?: string;
+  /** 财报时段：bmo 盘前、dmh 盘中、amc 盘后（Finnhub 给的，没有具体时间） */
+  session?: 'bmo' | 'dmh' | 'amc';
   symbol?: string;
   title: string;
+}
+
+/** 排序用的美东时间：有具体时间用时间；财报按时段排（盘前在开盘前、盘后在收盘后）；全天事件排最前 */
+export function eventSortTime(e: Pick<MarketEvent, 'time' | 'session'>): string {
+  if (e.time) return e.time;
+  if (e.session === 'bmo') return '09:00';
+  if (e.session === 'dmh') return '12:00';
+  if (e.session === 'amc') return '16:01';
+  return '00:00';
 }
 
 const DEFAULT_TITLE: Record<Exclude<EventKind, 'earnings' | 'closed' | 'early_close'>, [string, string]> = {
@@ -122,7 +133,8 @@ export function buildCalendar(input: CalendarInput): MarketEvent[] {
       const hour = input.earningsHour?.[symbol];
       const when = hour && EARNINGS_HOUR[hour] ? EARNINGS_HOUR[hour]![i] : '';
       const title = lang === 'zh' ? `${symbol} 财报${when ? `（${when}）` : ''}` : `${symbol} earnings${when ? ` (${when})` : ''}`;
-      out.push({ date, kind: 'earnings', symbol, title });
+      const session = hour === 'bmo' || hour === 'dmh' || hour === 'amc' ? hour : undefined;
+      out.push({ date, kind: 'earnings', symbol, title, ...(session ? { session } : {}) });
     }
   }
   for (const row of MACRO_CALENDAR) {
@@ -131,7 +143,7 @@ export function buildCalendar(input: CalendarInput): MarketEvent[] {
     const title = custom ?? (row.kind === 'fomc' || row.kind === 'cpi' || row.kind === 'jobs' ? DEFAULT_TITLE[row.kind][i] : row.kind);
     out.push({ date: row.date, kind: row.kind, time: row.time, title });
   }
-  return out.sort((a, b) => a.date.localeCompare(b.date) || (a.time ?? '99').localeCompare(b.time ?? '99') || a.title.localeCompare(b.title));
+  return out.sort((a, b) => a.date.localeCompare(b.date) || eventSortTime(a).localeCompare(eventSortTime(b)) || a.title.localeCompare(b.title));
 }
 
 // ---------- 导出 .ics ----------

@@ -6,21 +6,22 @@ import { signedPct, timeLabel } from '../format';
 import { t } from '../i18n';
 import type { AppState } from '../store';
 import { Empty } from '../ui';
-import { SectorChart } from './Sectors';
+import { QuoteLink, SectorChart } from './Sectors';
 
-const NEWS_SHOWN = 20;
+/** 每只持仓默认先显示几条，点开看全部（最多 10 条） */
+const NEWS_FIRST = 3;
+/** 摘要太长的截一下再翻译、显示 */
+const clip = (x?: string) => (x ? (x.length > 280 ? `${x.slice(0, 280).trimEnd()}…` : x) : '');
 
-/** 中文界面下，把要显示的新闻标题交给 AI 翻译（用户自己的 key）。新标题出现时才会再调用。 */
-function useNewsTranslation(s: AppState, d: Derived): string {
+/** 中文界面下，把正在显示的新闻标题和摘要交给 AI 翻译（用户自己的 key）。有新的才调用。 */
+function useNewsTranslation(s: AppState, texts: string[], want: boolean): string {
   const [err, setErr] = useState('');
-  const want = d.lang === 'zh' && !!s.settings.anthropicKey;
-  const titles = d.newsHeld.slice(0, NEWS_SHOWN).map((n) => n.title);
-  const missing = want ? titles.filter((x) => !s.translations?.[x]) : [];
-  const key = missing.join('\n');
+  const missing = want ? texts.filter((x) => x && !s.translations?.[x]) : [];
+  const key = missing.join('\n\u0000');
   useEffect(() => {
     if (!key) return;
     let alive = true;
-    void translateTitles(key.split('\n')).then((e) => {
+    void translateTitles(key.split('\n\u0000')).then((e) => {
       if (alive) setErr(e ?? '');
     });
     return () => {
@@ -31,7 +32,15 @@ function useNewsTranslation(s: AppState, d: Derived): string {
 }
 
 export function Market({ s, d }: { s: AppState; d: Derived }) {
-  const translateErr = useNewsTranslation(s, d);
+  const [openNews, setOpenNews] = useState<Record<string, boolean>>({});
+  const zhNews = d.lang === 'zh';
+  // 新闻按持仓分组，仓位大的在前；没有行情的（债券等）没有新闻
+  const groups = d.view.positions
+    .filter((p) => !p.noQuote)
+    .map((p) => ({ p, items: d.newsHeld.filter((n) => n.symbol === p.symbol) }))
+    .filter((g) => g.items.length);
+  const shown = groups.flatMap((g) => (openNews[g.p.symbol] ? g.items : g.items.slice(0, NEWS_FIRST)));
+  const translateErr = useNewsTranslation(s, shown.flatMap((n) => [n.title, clip(n.summary)]), zhNews && !!s.settings.anthropicKey);
 
   if (!s.settings.finnhubKey)
     return (
@@ -60,7 +69,6 @@ export function Market({ s, d }: { s: AppState; d: Derived }) {
     : d.labels.allUp
       ? t('mkt.allUp', { n: sectors.length })
       : t('mkt.mixed', { u: sectors.filter((x) => x.changePct > 0).length, d: sectors.filter((x) => x.changePct < 0).length });
-  const zhNews = d.lang === 'zh';
 
   return (
     <>
@@ -94,7 +102,7 @@ export function Market({ s, d }: { s: AppState; d: Derived }) {
             <h2 style={{ margin: 0, fontSize: 15 }}>{t('mkt.news')}</h2>
             <span className="label">{t('mkt.newsSub')}</span>
           </div>
-          {zhNews && d.newsHeld.length ? (
+          {zhNews && groups.length ? (
             s.translating ? (
               <span className="label" style={{ padding: '0 6px' }}>{t('mkt.translating')}</span>
             ) : translateErr ? (
@@ -103,27 +111,44 @@ export function Market({ s, d }: { s: AppState; d: Derived }) {
               <span className="label" style={{ padding: '0 6px' }}>{t('mkt.translateHint')}</span>
             ) : null
           ) : null}
-          {d.newsHeld.length ? (
-            d.newsHeld.slice(0, NEWS_SHOWN).map((n) => {
-              const zh = zhNews ? s.translations?.[n.title] : undefined;
+          {groups.length ? (
+            groups.map(({ p, items }) => {
+              const open = !!openNews[p.symbol];
+              const list = open ? items : items.slice(0, NEWS_FIRST);
               return (
-                <a key={n.url + n.symbol} href={n.url} target="_blank" rel="noreferrer" className="card tight" style={{ textDecoration: 'none', color: 'inherit' }}>
-                  <span className="row" style={{ gap: 6, fontSize: 11 }}>
-                    <span className="chip" style={{ fontWeight: 700, fontSize: 11 }}>{n.symbol}</span>
-                    <span className="muted">
-                      {n.source} · {timeLabel(n.publishedAt)}
-                      {zh ? ` · ${t('mkt.machine')}` : ''}
+                <section key={p.symbol} className="card news-group">
+                  <div className="card-head">
+                    <span className="row" style={{ gap: 8 }}>
+                      <QuoteLink s={s} symbol={p.symbol} className="chip sym-chip" />
+                      <span className="label">{t('mkt.groupLine', { w: p.weight, n: items.length })}</span>
                     </span>
-                  </span>
-                  <span lang={zh ? 'zh-CN' : 'en'} style={{ fontSize: 15, fontWeight: 600, lineHeight: 1.45 }}>
-                    {zh ?? n.title}
-                  </span>
-                  {zh ? (
-                    <span lang="en" className="muted" style={{ fontSize: 12, lineHeight: 1.4 }}>
-                      {n.title}
-                    </span>
+                    {p.dayPct != null ? <span className={p.dayPct < 0 ? 'neg' : 'pos'} style={{ fontSize: 12, fontWeight: 600 }}>{signedPct(p.dayPct)}</span> : null}
+                  </div>
+                  {list.map((n) => {
+                    const zh = zhNews ? s.translations?.[n.title] : undefined;
+                    const sum = clip(n.summary);
+                    const zhSum = zhNews && sum ? s.translations?.[sum] : undefined;
+                    return (
+                      <a key={n.url + n.symbol} href={n.url} target="_blank" rel="noreferrer" className="news-item" title={zh ? n.title : undefined}>
+                        <span className="muted" style={{ fontSize: 11 }}>
+                          {n.source} · {timeLabel(n.publishedAt)}
+                          {zh ? ` · ${t('mkt.machine')}` : ''}
+                        </span>
+                        <span lang={zh ? 'zh-CN' : 'en'} className="news-title">{zh ?? n.title}</span>
+                        {sum ? (
+                          <span lang={zhSum ? 'zh-CN' : 'en'} className="muted news-sum">
+                            {zhNews ? (zhSum ?? (s.settings.anthropicKey ? '' : sum)) : sum}
+                          </span>
+                        ) : null}
+                      </a>
+                    );
+                  })}
+                  {items.length > NEWS_FIRST ? (
+                    <button className="linkbtn" style={{ fontSize: 13 }} onClick={() => setOpenNews((o) => ({ ...o, [p.symbol]: !open }))}>
+                      {open ? t('common.collapse') : t('mkt.moreNews', { n: items.length - NEWS_FIRST })}
+                    </button>
                   ) : null}
-                </a>
+                </section>
               );
             })
           ) : (

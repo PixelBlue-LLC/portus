@@ -25,6 +25,8 @@ export interface Settings {
   tzSecondary: string;
   /** 盘中自动刷新行情的间隔（分钟），0 = 不自动刷新 */
   autoRefreshMin: number;
+  /** 点股票代码时去哪个公开网站看价格 */
+  quoteSite: 'yahoo' | 'google' | 'tradingview';
 }
 
 export interface MarketCache {
@@ -81,6 +83,19 @@ export interface AppState {
   chains: Record<string, ChainCache>;
   /** 首次使用引导已关掉 */
   welcomeDismissed?: boolean;
+  /** 板块的 AI 解读：ETF 代码 → 解读文字和时间 */
+  sectorNotes?: Record<string, { text: string; at: string }>;
+  /** 观望列表：没持有、但在看的股票 */
+  watchlist?: WatchItem[];
+}
+
+export interface WatchItem {
+  symbol: string;
+  /** 加进来的时间（ISO） */
+  addedAt: string;
+  /** 加进来时的价格，用来算「加入以来」的涨跌 */
+  addedPrice?: number;
+  note?: string;
 }
 
 export interface HistoryCache {
@@ -133,6 +148,7 @@ export const DEFAULT_SETTINGS: Settings = {
   tzPrimary: '',
   tzSecondary: 'America/New_York',
   autoRefreshMin: 5,
+  quoteSite: 'yahoo',
 };
 
 const EMPTY_MARKET: MarketCache = { quotes: {}, sectors: [], news: [], earnings: {}, industries: {}, errors: [] };
@@ -225,10 +241,10 @@ export function useAppState(): AppState {
 
 /** 导出备份：持仓、现金、设置、提醒、计划（可选是否带 key） */
 export function exportBackup(includeKeys: boolean): string {
-  const { holdings, cashByAccount, settings, checklist, alerts, plans, etfCustom, candidates } = state;
+  const { holdings, cashByAccount, settings, checklist, alerts, plans, etfCustom, candidates, watchlist } = state;
   const s = includeKeys ? settings : { ...settings, finnhubKey: '', anthropicKey: '', twelveDataKey: '' };
   return JSON.stringify(
-    { app: 'portus', version: 3, exportedAt: new Date().toISOString(), holdings, cashByAccount, settings: s, checklist, alerts, plans, etfCustom, candidates },
+    { app: 'portus', version: 3, exportedAt: new Date().toISOString(), holdings, cashByAccount, settings: s, checklist, alerts, plans, etfCustom, candidates, watchlist },
     null,
     2,
   );
@@ -252,6 +268,7 @@ export function importBackup(text: string): void {
     plans: data.plans ?? s.plans,
     etfCustom: data.etfCustom ?? s.etfCustom,
     candidates: data.candidates ?? s.candidates,
+    watchlist: data.watchlist ?? s.watchlist,
     market: EMPTY_MARKET,
     attribution: undefined,
     isSample: false,

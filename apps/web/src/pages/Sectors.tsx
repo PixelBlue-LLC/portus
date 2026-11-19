@@ -1,11 +1,22 @@
 import { Fragment, useEffect, useState } from 'react';
 import { etfMovers, nameIn, type SectorPerf } from 'portus-core';
-import { refreshSymbols } from '../actions';
+import { explainSector, refreshSymbols } from '../actions';
+import { QUOTE_SITES, quoteUrl } from '../links';
 import type { Derived } from '../derived';
-import { signedPct } from '../format';
+import { signedPct, timeLabel } from '../format';
 import { t } from '../i18n';
 import type { AppState } from '../store';
 import { Card } from '../ui';
+
+/** 股票代码做成链接，新标签页打开公开行情网站（设置里可选 Yahoo / Google / TradingView） */
+export function QuoteLink({ s, symbol, className = '' }: { s: AppState; symbol: string; className?: string }) {
+  const site = s.settings.quoteSite ?? 'yahoo';
+  return (
+    <a className={`qlink ${className}`} href={quoteUrl(symbol, site)} target="_blank" rel="noreferrer" title={t('sec.openQuote', { s: symbol, site: QUOTE_SITES[site] })}>
+      {symbol}
+    </a>
+  );
+}
 
 /** 百分点：带正负号、两位小数 */
 const pp = (v: number) => `${v < 0 ? '−' : '+'}${Math.abs(v).toFixed(2)}`;
@@ -25,6 +36,9 @@ function Diverging({ v, max, height = 8 }: { v: number; max: number; height?: nu
 
 function Movers({ s, d, etf, change }: { s: AppState; d: Derived; etf: string; change: number }) {
   const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [aiErr, setAiErr] = useState('');
+  const note = s.sectorNotes?.[etf];
   const data = etfMovers(etf, s.market.quotes, s.etfCustom);
   const syms = data?.rows.map((r) => r.symbol).join(',') ?? '';
   useEffect(() => {
@@ -56,7 +70,7 @@ function Movers({ s, d, etf, change }: { s: AppState; d: Derived; etf: string; c
         {data.rows.map((r) => (
           <div className="mv-row" role="row" key={r.symbol}>
             <span role="cell" className="sym">
-              {r.symbol}
+              <QuoteLink s={s} symbol={r.symbol} />
               {held.has(r.symbol) ? <span className="chip held">{t('sec.held')}</span> : null}
             </span>
             <span role="cell" className="num muted">{r.weight.toFixed(1)}%</span>
@@ -78,6 +92,41 @@ function Movers({ s, d, etf, change }: { s: AppState; d: Derived; etf: string; c
       </div>
       {pending && !err ? <span className="label">{t('sec.loading')}</span> : null}
       {err ? <span className="label neg">{err}</span> : null}
+
+      <div className="sec-ai">
+        {note ? (
+          <p className="body" style={{ margin: 0, fontSize: 14, lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>
+            {note.text}
+          </p>
+        ) : null}
+        {s.settings.anthropicKey ? (
+          <div className="row">
+            <button
+              className="btn small"
+              disabled={busy || pending}
+              onClick={async () => {
+                setBusy(true);
+                setAiErr('');
+                try {
+                  await explainSector(etf, change);
+                } catch (e) {
+                  setAiErr(e instanceof Error ? e.message : String(e));
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            >
+              {busy ? t('attr.busy') : note ? t('sec.aiAgain') : t('sec.ai')}
+            </button>
+            {note && !busy ? <span className="label">{t('attr.at', { t: timeLabel(note.at) })}</span> : null}
+            {aiErr ? <span className="label neg">{aiErr}</span> : null}
+          </div>
+        ) : (
+          <span className="label">
+            {t('sec.aiNeedKey')} <a href="#/settings">{t('nav.settings')}</a>
+          </span>
+        )}
+      </div>
     </div>
   );
 }
@@ -123,7 +172,11 @@ export function SectorChart({ s, d, initial }: { s: AppState; d: Derived; initia
         <h2>{t('sec.title')}</h2>
         <span className="label">{t('sec.hint')}</span>
       </div>
-      {!d.sectors.length ? <span className="muted" style={{ fontSize: 14 }}>{t('mkt.noSectors')}</span> : null}
+      {!d.sectors.length ? (
+        <span className="muted" style={{ fontSize: 14, lineHeight: 1.6 }}>
+          {s.market.errors.length ? t('mkt.noSectorsErr', { e: s.market.errors[0]! }) : t('mkt.noSectors')}
+        </span>
+      ) : null}
       {idx.length ? <Group s={s} d={d} title={t('sec.indexes')} rows={idx} max={max} open={open} onToggle={toggle} /> : null}
       {sec.length ? <Group s={s} d={d} title={t('sec.sectors')} rows={sec} max={max} open={open} onToggle={toggle} /> : null}
     </Card>

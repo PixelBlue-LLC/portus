@@ -331,7 +331,7 @@ function UpcomingCard({ s }: { s: AppState }) {
         {events.map((e) => (
           <div key={e.date + e.kind + (e.symbol ?? '')} className="ev-row">
             <span className="label ev-d">{e.date.slice(5)}</span>
-            <EventLine e={e} />
+            <EventLine e={e} s={s} />
           </div>
         ))}
       </div>

@@ -73,6 +73,54 @@ export function askPrompt(question: string, facts: string, lang: Lang = 'zh'): s
     : ['今天的数据：', facts, '', `问题：${question}`].join('\n');
 }
 
+export interface SectorFacts {
+  /** ETF 代码 */
+  etf: string;
+  /** 板块名（显示用，已按语言翻好） */
+  name: string;
+  changePct: number;
+  /** 前十大成分里贡献最大的几只 */
+  movers: Array<{ symbol: string; weight: number; changePct: number | null; contribution: number | null }>;
+  /** 成分股的最新新闻标题：代码 → 标题 */
+  news?: Record<string, string[]>;
+  /** 前十大占基金的比例 % */
+  coveredPct: number;
+}
+
+const f2 = (v: number) => `${v < 0 ? '-' : '+'}${Math.abs(v).toFixed(2)}`;
+
+/** 板块解读：只给板块今天的涨跌、成分股贡献和新闻标题，让 AI 解释已经发生的事 */
+export function sectorPrompt(f: SectorFacts, lang: Lang = 'zh'): string {
+  const zh = lang === 'zh';
+  const lines = f.movers.map((m) =>
+    m.changePct == null
+      ? zh
+        ? `${m.symbol}：权重 ${m.weight}%，没有今天的报价`
+        : `${m.symbol}: weight ${m.weight}%, no quote today`
+      : zh
+        ? `${m.symbol}：权重 ${m.weight}%，今天 ${f2(m.changePct)}%，贡献 ${f2(m.contribution ?? 0)} 个百分点`
+        : `${m.symbol}: weight ${m.weight}%, today ${f2(m.changePct)}%, contribution ${f2(m.contribution ?? 0)} pts`,
+  );
+  const news = Object.entries(f.news ?? {}).flatMap(([sym, titles]) => titles.map((x) => `${sym}: ${x}`));
+  if (zh)
+    return [
+      `解释 ${f.name}（${f.etf}）今天 ${f2(f.changePct)}% 的涨跌主要来自哪里，分【事实】【推断】两层，150 字内。`,
+      '只能用下面的数字和新闻标题；新闻里没有明确原因的，就说没有明确原因。不要预测后市，不要给任何操作建议。',
+      `前十大成分占基金 ${f.coveredPct}%，按贡献排序：`,
+      ...lines,
+      news.length ? '成分股最近的新闻标题：' : '没有拿到成分股的新闻。',
+      ...news,
+    ].join('\n');
+  return [
+    `Explain where ${f.name} (${f.etf}) got its ${f2(f.changePct)}% move today, split into [Facts] and [Inference], under 120 words.`,
+    'Use only the numbers and headlines below. If the news gives no clear reason, say so. Do not predict what happens next or suggest any action.',
+    `The top 10 holdings are ${f.coveredPct}% of the fund, sorted by contribution:`,
+    ...lines,
+    news.length ? 'Recent headlines for these stocks:' : 'No headlines were available for these stocks.',
+    ...news,
+  ].join('\n');
+}
+
 /** 新闻翻译：只翻译，不加评论。输入输出都是 JSON 数组，顺序不变。 */
 export const TRANSLATE_SYSTEM_PROMPT = [
   'You translate financial news headlines and summaries from English into Simplified Chinese.',

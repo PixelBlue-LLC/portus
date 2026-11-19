@@ -198,3 +198,19 @@ describe('没有行情的持仓带登记时间', () => {
     expect(buildPortfolio([{ symbol: 'AAA', qty: 1, costBasis: 1, valuedAt: '2026-10-01' }], {}, 0).positions[0]!.valuedAt).toBeUndefined();
   });
 });
+
+describe('日历同一天内的顺序', () => {
+  it('盘前财报在 CPI 之后、开盘前；盘后财报在收盘后；休市这种全天事件在最前', async () => {
+    const { buildCalendar } = await import('../src');
+    const ev = buildCalendar({
+      earnings: { AAA: '2027-01-13', BBB: '2027-01-13', CCC: '2027-01-13' },
+      earningsHour: { AAA: 'amc', BBB: 'bmo' },
+      from: '2027-01-13',
+      days: 1,
+      lang: 'en',
+    });
+    // 2027-01-13 有 CPI 08:30
+    expect(ev.map((e) => e.symbol ?? e.kind)).toEqual(['CCC', 'cpi', 'BBB', 'AAA']);
+    expect(ev.find((e) => e.symbol === 'AAA')!.session).toBe('amc');
+  });
+});

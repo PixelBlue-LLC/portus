@@ -1,6 +1,6 @@
-import { alertSymbols, attributionPrompt, askPrompt, TRANSLATE_SYSTEM_PROMPT } from 'portus-core';
+import { alertSymbols, attributionPrompt, askPrompt, etfMovers, nameIn, sectorPrompt, SECTOR_ETFS, TRANSLATE_SYSTEM_PROMPT } from 'portus-core';
 import { askClaude } from './data/anthropic';
-import { fetchMarket, fetchQuotes } from './data/finnhub';
+import { fetchHeadlines, fetchMarket, fetchQuotes } from './data/finnhub';
 import { getLang, t } from './i18n';
 import { getState, setState } from './store';
 
@@ -8,7 +8,7 @@ import { getState, setState } from './store';
 function quoteSymbols(s: ReturnType<typeof getState>): { held: string[]; extra: string[] } {
   return {
     held: s.holdings.filter((h) => !h.noQuote).map((h) => h.symbol),
-    extra: [...alertSymbols(s.alerts), ...s.plans.filter((p) => !p.archived).map((p) => p.symbol), ...s.candidates],
+    extra: [...alertSymbols(s.alerts), ...s.plans.filter((p) => !p.archived).map((p) => p.symbol), ...s.candidates, ...(s.watchlist ?? []).map((w) => w.symbol)],
   };
 }
 
@@ -21,11 +21,12 @@ export async function refreshMarket(): Promise<void> {
     const { held, extra } = quoteSymbols(s);
     const r = await fetchMarket(held, s.settings.finnhubKey, s.market.industries ?? {}, extra);
     const now = new Date().toISOString();
+    // 这次没拉到的（限流、网络）保留上次的，不让页面变空
     setState({
       market: {
-        quotes: r.quotes,
-        sectors: r.sectors,
-        news: r.news,
+        quotes: { ...s.market.quotes, ...r.quotes },
+        sectors: r.sectors.length ? r.sectors : s.market.sectors,
+        news: r.news.length ? r.news : s.market.news,
         earnings: r.earnings,
         earningsHour: r.earningsHour,
         industries: { ...s.market.industries, ...r.industries },
@@ -35,6 +36,7 @@ export async function refreshMarket(): Promise<void> {
       },
       attribution: undefined,
     });
+    backfillWatch();
   } catch (e) {
     setState((st) => ({ market: { ...st.market, errors: [e instanceof Error ? e.message : String(e)] } }));
   } finally {
@@ -58,11 +60,21 @@ export async function refreshQuotes(): Promise<void> {
         market: { ...st.market, quotes, sectors: r.sectors.length ? r.sectors : st.market.sectors, errors: r.errors, fetchedAt: new Date().toISOString() },
       };
     });
+    backfillWatch();
   } catch (e) {
     setState((st) => ({ market: { ...st.market, errors: [e instanceof Error ? e.message : String(e)] } }));
   } finally {
     setState({ loading: false });
   }
+}
+
+/** 观望列表里还没有「加入时价格」的，用刚拉到的报价补上 */
+function backfillWatch() {
+  setState((st) => {
+    const list = st.watchlist ?? [];
+    if (!list.some((w) => w.addedPrice == null && st.market.quotes[w.symbol])) return {};
+    return { watchlist: list.map((w) => (w.addedPrice == null && st.market.quotes[w.symbol] ? { ...w, addedPrice: st.market.quotes[w.symbol]!.price } : w)) };
+  });
 }
 
 /** 板块成分股的报价：点开板块时按需拉，5 分钟内拉过的不重复拉 */
@@ -81,10 +93,27 @@ export async function refreshSymbols(symbols: string[]): Promise<string | null> 
       for (const [sym, q] of Object.entries(r.quotes)) quotes[sym] = { ...q, high52: quotes[sym]?.high52, low52: quotes[sym]?.low52 };
       return { market: { ...st.market, quotes } };
     });
+    backfillWatch();
     return r.errors[0] ?? null;
   } catch (e) {
     return e instanceof Error ? e.message : String(e);
   }
+}
+
+/**
+ * 板块 AI 解读：板块今天的涨跌 + 前十大里贡献最大的几只 + 这几只最近两天的新闻标题。
+ * 用户自己的 Anthropic key；结果按板块存在本地。
+ */
+export async function explainSector(etf: string, changePct: number): Promise<void> {
+  const s = getState();
+  const m = etfMovers(etf, s.market.quotes, s.etfCustom);
+  if (!m) return;
+  const top = m.rows.filter((r) => r.contribution != null).slice(0, 5);
+  const news = s.settings.finnhubKey ? await fetchHeadlines(top.slice(0, 3).map((r) => r.symbol), s.settings.finnhubKey) : {};
+  const lang = getLang();
+  const prompt = sectorPrompt({ etf, name: nameIn(SECTOR_ETFS[etf] ?? etf, lang), changePct, movers: top, news, coveredPct: m.coveredPct }, lang);
+  const r = await askClaude(s.settings.anthropicKey, s.settings.aiModel, [{ role: 'user', content: prompt }]);
+  setState((st) => ({ sectorNotes: { ...st.sectorNotes, [etf]: { text: r.text, at: new Date().toISOString() } } }));
 }
 
 /** 自动刷新：距上次完整刷新超过一小时就做完整刷新，否则只拉报价 */
@@ -128,13 +157,13 @@ export async function translateTitles(titles: string[]): Promise<string | null> 
   const s = getState();
   if (!s.settings.anthropicKey || s.translating) return null;
   const done = s.translations ?? {};
-  const todo = [...new Set(titles)].filter((x) => x && !done[x]).slice(0, 25);
+  const todo = [...new Set(titles)].filter((x) => x && !done[x]).slice(0, 12);
   if (!todo.length) return null;
   setState({ translating: true });
   try {
     const r = await askClaude(s.settings.anthropicKey, s.settings.aiModel, [{ role: 'user', content: JSON.stringify(todo) }], {
       system: TRANSLATE_SYSTEM_PROMPT,
-      maxTokens: 2000,
+      maxTokens: 4000,
       // 这里是翻译第三方新闻，不是 AI 的建议；原文里的措辞照实翻译
       checkAdvice: false,
     });
