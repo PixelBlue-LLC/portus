@@ -5,7 +5,8 @@ import type { Derived } from '../derived';
 import { signedPct, timeLabel } from '../format';
 import { t } from '../i18n';
 import type { AppState } from '../store';
-import { Card, Empty } from '../ui';
+import { Empty } from '../ui';
+import { SectorChart } from './Sectors';
 
 const NEWS_SHOWN = 20;
 
@@ -50,7 +51,8 @@ export function Market({ s, d }: { s: AppState; d: Derived }) {
     );
 
   const sectors = d.sectors;
-  const max = Math.max(...sectors.map((x) => Math.abs(x.changePct)), 1);
+  // 从「今天」页点板块色块进来时是 #/market/XLE，直接展开那一个
+  const initialSector = /^#\/market\/([A-Z.]+)/.exec(location.hash)?.[1];
   const best = sectors[0];
   const worst = sectors.at(-1);
   const summary = d.labels.allDown
@@ -85,26 +87,7 @@ export function Market({ s, d }: { s: AppState; d: Derived }) {
       ) : null}
 
       <div className="grid2">
-        <Card>
-          <div className="card-head label">
-            <span>{d.labels.strong}</span>
-            <span>{d.labels.weak}</span>
-          </div>
-          {sectors.map((x) => (
-            <div key={x.symbol} style={{ display: 'grid', gridTemplateColumns: '128px minmax(0, 1fr) 64px', alignItems: 'center', gap: 8, fontSize: 13 }}>
-              <span className="body">
-                {nameIn(x.name, d.lang)} <span className="muted" style={{ fontSize: 11 }}>{x.symbol}</span>
-              </span>
-              <div className="bar" style={{ height: 8 }}>
-                <i style={{ height: 8, width: `${(Math.abs(x.changePct) / max) * 100}%`, background: x.changePct < 0 ? 'var(--down)' : 'var(--up)', opacity: Math.abs(x.changePct) >= 5 ? 1 : 0.55 }} />
-              </div>
-              <span style={{ textAlign: 'right', fontWeight: 600 }} className={x.changePct < 0 ? 'neg' : 'pos'}>
-                {signedPct(x.changePct)}
-              </span>
-            </div>
-          ))}
-          {!sectors.length ? <span className="muted" style={{ fontSize: 14 }}>{t('mkt.noSectors')}</span> : null}
-        </Card>
+        <SectorChart s={s} d={d} initial={initialSector} />
 
         <div className="col">
           <div className="card-head" style={{ padding: '0 6px' }}>

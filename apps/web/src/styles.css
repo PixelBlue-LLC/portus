@@ -168,7 +168,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .tr .sym { font-weight: 600; }
 
 .heat { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
-.heat > div { border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 2px; }
+.heat > a { border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 2px; }
 .heat .n { font-size: 12px; }
 .heat .v { font-size: 15px; font-weight: 700; }
 
@@ -325,3 +325,42 @@ a:focus-visible, button:focus-visible, select:focus-visible, .acct-chip:focus-vi
 .htable .sub { display: block; font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
 .htable tfoot th { font-weight: 600; }
 .htable tfoot tr.total th, .htable tfoot tr.total td { font-weight: 700; border-bottom: none; border-top: 1px solid var(--line); }
+
+.htable .m, .htable .s { display: block; }
+.htable .s { font-size: 12px; margin-top: 2px; }
+.htable thead .s { font-weight: 400; }
+.htable td .s:not(.pos):not(.neg) { color: var(--muted); }
+.pair { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+
+/* ---------- 市场页板块图 ---------- */
+.sec-group { display: flex; flex-direction: column; gap: 2px; }
+.sec-title { padding: 6px 0 4px; }
+.sec-row {
+  display: grid; grid-template-columns: minmax(110px, 0.9fr) minmax(0, 1.6fr) 64px 14px; align-items: center; gap: 10px;
+  min-height: 36px; padding: 0 6px; margin: 0 -6px; border: none; border-radius: 8px; background: none; font: inherit; font-size: 13px; color: inherit; text-align: left; cursor: pointer;
+}
+.sec-row:hover, .sec-row.open { background: var(--line2); }
+.sec-row .tk { font-size: 11px; }
+.sec-row .v { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+.sec-row .caret { font-size: 10px; color: var(--muted); }
+.dbar { position: relative; width: 100%; background: var(--line2); border-radius: 4px; }
+.dbar::after { content: ''; position: absolute; left: 50%; top: -3px; bottom: -3px; width: 1px; background: var(--line); }
+.dbar i { position: absolute; top: 0; bottom: 0; border-radius: 4px; }
+.dbar i.up { background: var(--up); }
+.dbar i.down { background: var(--down); }
+.movers { display: flex; flex-direction: column; gap: 8px; margin: 2px 0 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; }
+.mv-grid { display: flex; flex-direction: column; font-size: 13px; font-variant-numeric: tabular-nums; }
+.mv-row { display: grid; grid-template-columns: minmax(90px, 1fr) 56px 64px minmax(120px, 1.6fr); align-items: center; gap: 10px; padding: 5px 0; border-bottom: 1px solid var(--line2); }
+.mv-row.head { font-size: 11px; color: var(--muted); }
+.mv-row:last-child { border-bottom: none; }
+.mv-row .num { text-align: right; }
+.mv-row .sym { font-weight: 600; display: flex; align-items: center; gap: 6px; }
+.mv-contrib { display: grid; grid-template-columns: minmax(40px, 1fr) auto; align-items: center; gap: 8px; }
+.chip.held { font-size: 10px; padding: 1px 6px; font-weight: 600; }
+@media (max-width: 480px) {
+  .sec-row { grid-template-columns: minmax(96px, 1fr) minmax(0, 1fr) 58px 12px; gap: 6px; }
+  .mv-row { grid-template-columns: minmax(70px, 1fr) 48px 64px 64px; gap: 6px; }
+  .mv-contrib { grid-template-columns: auto; justify-items: end; }
+  .mv-contrib .dbar { display: none; }
+  .mv-row.head span:last-child { text-align: right; }
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildPortfolio, parseHoldingsCsv, shouldAutoRefresh, usMarketSession, aggregateBySymbol } from '../src';
+import { buildPortfolio, etfMovers, parseHoldingsCsv, parsePastedHoldings, shouldAutoRefresh, usMarketSession, aggregateBySymbol } from '../src';
 
 // 全部用固定时刻（UTC），不依赖真实的「现在」
 const at = (iso: string) => new Date(iso);
@@ -114,5 +114,72 @@ describe('今日盈亏来源的比例', () => {
     );
     expect(v.dayPnl!).toBeGreaterThan(0);
     expect(subline(v, 'en')).toBe('100% of the gain came from AAA.');
+  });
+});
+
+describe('粘贴持仓（从券商网页表格复制）', () => {
+  // 虚构数据，格式照 IBKR 网页「Your Holdings」
+  const head = ['INSTRUMENT ▲', '▲ POSITION', '▲ LAST', '▲ CHANGE %', '▲ COST BASIS', '▲ MARKET VALUE', '▲ AVG PRICE', '▲ DAILY P&L', '▲ UNREALIZED P&L'];
+  const rows = [
+    ['AAPL', '10', '200.00', '+1.00%', '1,800.00', '2,000.00', '180.00', '+19.80', '+200.00'],
+    ["US-T Govt Note TIPS 1.5 Jan15'30", '1', '98.50000', '-0.10%', '1,000.00', '990.00', '100.00', '-0.99', '-10.00'],
+    ['• VTI', '2.5', '300.00', '-0.50%', '760.00', '750.00', '304.00', '-10.00', '-10.00'],
+  ];
+  const check = (r: ReturnType<typeof parsePastedHoldings>) => {
+    expect(r.holdings.map((h) => h.symbol)).toEqual(['AAPL', "US-T Govt Note TIPS 1.5 Jan15'30", 'VTI']);
+    expect(r.holdings[0]).toMatchObject({ qty: 10, costBasis: 180 });
+    expect(r.holdings[1]).toMatchObject({ qty: 1, noQuote: true, manualPrice: 990, costBasis: 1000 });
+    expect(r.holdings[2]).toMatchObject({ qty: 2.5, costBasis: 304 });
+  };
+  it('带表头、制表符分隔', () => check(parsePastedHoldings([head, ...rows].map((r) => r.join('\t')).join('\n'))));
+  it('每个格子一行，夹着「⋮」菜单', () => check(parsePastedHoldings([...head, ...rows.flatMap((r) => [...r, '⋮'])].join('\n'))));
+  it('没带表头，按 IBKR 列顺序', () => {
+    const r = parsePastedHoldings(rows.map((x) => x.join('\t')).join('\n'));
+    check(r);
+    expect(r.broker).toBe('IBKR');
+  });
+  it('还认「代码 数量 成本」', () => {
+    expect(parsePastedHoldings('NVDA 30 92\nAAPL 20 150').holdings).toEqual([
+      { symbol: 'NVDA', qty: 30, costBasis: 92 },
+      { symbol: 'AAPL', qty: 20, costBasis: 150 },
+    ]);
+  });
+});
+
+describe('IBKR 活动报表（分段 CSV）', () => {
+  const csv = [
+    'Statement,Header,Field Name,Field Value',
+    'Statement,Data,Title,Activity Statement',
+    'Open Positions,Header,DataDiscriminator,Asset Category,Currency,Symbol,Quantity,Mult,Cost Price,Cost Basis,Close Price,Value,Unrealized P/L,Code',
+    'Open Positions,Data,Summary,Stocks,USD,AAPL,10,1,180,1800,200,2000,200,',
+    'Open Positions,Data,Lot,Stocks,USD,AAPL,10,1,180,1800,200,2000,200,',
+    'Open Positions,Total,,Stocks,USD,,,,,1800,,2000,200,',
+    'Open Positions,Data,Summary,Bonds,USD,T 1 1/2 01/15/30,1000,1,99.5,995,98.77,987.7,-7.3,',
+    'Trades,Header,DataDiscriminator,Asset Category,Currency,Symbol,Date/Time,Quantity,T. Price',
+    'Trades,Data,Order,Stocks,USD,MSFT,"2026-11-02, 10:00:00",5,400',
+  ].join('\n');
+  it('只读 Open Positions 段的 Summary 行，债券按市值', () => {
+    const r = parseHoldingsCsv(csv);
+    expect(r.holdings.map((h) => h.symbol)).toEqual(['AAPL', 'T 1 1/2 01/15/30']);
+    expect(r.holdings[0]).toMatchObject({ qty: 10, costBasis: 180 });
+    expect(r.holdings[1]).toMatchObject({ qty: 1000, noQuote: true, manualPrice: 0.9877, costBasis: 0.995 });
+  });
+});
+
+describe('每股涨跌和板块成分股', () => {
+  it('有昨收用昨收算每股涨跌', () => {
+    const v = buildPortfolio([{ symbol: 'AAA', qty: 5, costBasis: 90 }], { AAA: { symbol: 'AAA', price: 101, changePct: 1, prevClose: 100, asOf: '' } }, 0);
+    expect(v.positions[0]!.dayChange).toBeCloseTo(1, 6);
+  });
+  it('按贡献（权重 × 涨跌幅）排序', () => {
+    const m = etfMovers('XLE', { XOM: { changePct: -4 }, CVX: { changePct: -1 }, COP: { changePct: 2 } })!;
+    expect(m.rows[0]).toMatchObject({ symbol: 'XOM', contribution: -0.973 });
+    expect(m.rows[1]!.symbol).toBe('CVX');
+    expect(m.rows[2]!.symbol).toBe('COP');
+    expect(m.rows.at(-1)!.contribution).toBeNull();
+    expect(m.explained).toBeCloseTo(-0.973 - 0.185 + 0.145, 2);
+    expect(etfMovers('NOPE', {})).toBeNull();
+    // 用户自己填的成分表优先
+    expect(etfMovers('XLE', {}, { XLE: [['ZZZ', 50]] })!.rows[0]!.symbol).toBe('ZZZ');
   });
 });

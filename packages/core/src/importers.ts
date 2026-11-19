@@ -28,9 +28,11 @@ export function detectBroker(text: string): string | undefined {
 
 const SYMBOL_KEYS = ['symbol', 'ticker', 'financial instrument', '代码', '股票代码', 'instrument'];
 const QTY_KEYS = ['qty', 'quantity', 'shares', '数量', '持股数', 'position'];
-const AVG_COST_KEYS = ['average cost', 'avg cost', 'average price', 'avg price', 'cost per share', 'unit cost', '均价', '成本价', '平均成本'];
+const AVG_COST_KEYS = ['average cost', 'avg cost', 'average price', 'avg price', 'cost per share', 'unit cost', 'cost price', '均价', '成本价', '平均成本'];
 const TOTAL_COST_KEYS = ['cost basis', 'total cost', '总成本', '持仓成本'];
-const PRICE_KEYS = ['price', 'last price', 'last', 'current price', '现价', '最新价'];
+const PRICE_KEYS = ['price', 'last price', 'last', 'current price', 'close price', 'mark price', '现价', '最新价'];
+/** 认得但不用的列名：从网页表格复制时，用来认出哪几行是表头 */
+const OTHER_KEYS = ['change %', 'change', 'chg %', 'daily p&l', 'unrealized p&l', 'unrealized p/l', 'day change', 'gain/loss', 'currency', 'asset category', 'mult'];
 const MV_KEYS = ['market value', 'mkt val', 'value', '市值'];
 const NAME_KEYS = ['description', 'name', 'security name', '名称'];
 
@@ -72,8 +74,16 @@ export function splitCsvLine(line: string, delim: string): string[] {
   return out.map((c) => c.trim());
 }
 
+/** 表头单元格统一成小写、去掉排序箭头之类的符号 */
+const normHead = (h: string) =>
+  h
+    .toLowerCase()
+    .replace(/[▲▼↑↓⇅•*]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
 function findCol(headers: string[], keys: string[]): number {
-  const norm = headers.map((h) => h.toLowerCase().replace(/\s+/g, ' ').trim());
+  const norm = headers.map(normHead);
   // 先精确匹配，再前缀/包含匹配（Schwab 是 "Qty (Quantity)"、"Mkt Val (Market Value)"）
   for (const k of keys) {
     const i = norm.indexOf(k);
@@ -94,18 +104,25 @@ export function parseHoldingsCsv(text: string, lang: Lang = 'zh'): ImportResult 
   if (!lines.length) return { holdings: [], skipped };
   const delim = (lines.find((l) => l.includes('\t')) ? '\t' : ',') as string;
 
-  // 表头不一定在第一行（Schwab 第一行是账户标题），找第一行同时含代码列和数量列的
+  // 表头不一定在第一行（Schwab 第一行是账户标题），找第一行同时含代码列和数量列的。
+  // IBKR 的活动报表（Activity Statement）是分段的：每行第一格是段名、第二格是 Header / Data，
+  // 持仓在「Open Positions」段，有这一段就用它
   let headerIdx = -1;
   let headers: string[] = [];
-  for (let i = 0; i < Math.min(lines.length, 15); i++) {
+  for (let i = 0; i < Math.min(lines.length, 400); i++) {
     const cells = splitCsvLine(lines[i]!, delim);
     if (findCol(cells, SYMBOL_KEYS) >= 0 && findCol(cells, QTY_KEYS) >= 0) {
-      headerIdx = i;
-      headers = cells;
-      break;
+      const isOpenPositions = /^open positions$/i.test(cells[0] ?? '');
+      if (headerIdx < 0 || isOpenPositions) {
+        headerIdx = i;
+        headers = cells;
+      }
+      if (isOpenPositions || i >= 15) break;
     }
   }
   if (headerIdx < 0) return { holdings: [], skipped: [lang === 'zh' ? '没找到包含「代码」和「数量」的表头' : 'No header row with symbol and quantity columns found'] };
+  const section = /^header$/i.test(headers[1] ?? '') ? headers[0] : undefined;
+  const cDisc = section ? headers.findIndex((h) => normHead(h) === 'datadiscriminator') : -1;
 
   const cSym = findCol(headers, SYMBOL_KEYS);
   const cQty = findCol(headers, QTY_KEYS);
@@ -119,7 +136,13 @@ export function parseHoldingsCsv(text: string, lang: Lang = 'zh'): ImportResult 
   let cash: number | undefined;
   for (const line of lines.slice(headerIdx + 1)) {
     const cells = splitCsvLine(line, delim);
-    const rawSym = (cells[cSym] ?? '').trim();
+    if (section) {
+      // 分段报表：只要本段的数据行；有 Summary / Lot 两种时只要 Summary（Lot 是同一持仓的分批明细）
+      if (cells[0] !== section || !/^data$/i.test(cells[1] ?? '')) continue;
+      if (cDisc >= 0 && cells[cDisc] && !/^summary$/i.test(cells[cDisc]!)) continue;
+    }
+    // 网页表格里代码前面可能有「•」之类的标记（IBKR 用它标今天新开的仓位）
+    const rawSym = (cells[cSym] ?? '').replace(/^[\s•·●○◦*]+/, '').trim();
     const sym = rawSym.toUpperCase();
     if (/cash/i.test(rawSym)) {
       const mv = parseNumber(cells[cMv]);
@@ -167,14 +190,14 @@ export function parseHoldingsCsv(text: string, lang: Lang = 'zh'): ImportResult 
   return { holdings, cash, skipped, broker: detectBroker(text) };
 }
 
-/** 每行「代码 数量 [每股成本]」，空格、逗号或制表符分隔 */
+/** 每行「代码 数量 [每股成本]」，空格、逗号或制表符分隔（有制表符时只按制表符分，名字里的空格保留） */
 export function parseHoldingsText(text: string): ImportResult {
   const holdings: Holding[] = [];
   const skipped: string[] = [];
   for (const line of text.split(/\r?\n/)) {
     const t = line.trim();
     if (!t) continue;
-    const parts = t.split(/[\s,\t]+/);
+    const parts = t.includes('\t') ? t.split('\t').map((x) => x.trim()) : t.split(/[\s,]+/);
     const sym = (parts[0] ?? '').toUpperCase();
     const qty = parseNumber(parts[1]);
     const cost = parseNumber(parts[2]);
@@ -196,4 +219,61 @@ export function mergeHoldings(existing: Holding[], incoming: Holding[]): Holding
     map.set(k(h), { ...map.get(k(h)), ...h, symbol: sym });
   }
   return [...map.values()];
+}
+
+const isHeaderCell = (c: string) => {
+  const n = normHead(c);
+  return !!n && [SYMBOL_KEYS, QTY_KEYS, AVG_COST_KEYS, TOTAL_COST_KEYS, PRICE_KEYS, MV_KEYS, NAME_KEYS, OTHER_KEYS].some((ks) => ks.includes(n));
+};
+/** 网页表格复制出来的杂项：行尾的「⋮」菜单、圆点标记、空格 */
+const isJunk = (c: string) => !c.trim() || /^[\s⋮…•·●○◦|]+$/.test(c);
+
+/** IBKR 网页「Your Holdings」表的列顺序（复制时没带表头就按这个认） */
+const IBKR_WEB_COLUMNS = ['Instrument', 'Position', 'Last', 'Change %', 'Cost Basis', 'Market Value', 'Avg Price', 'Daily P&L', 'Unrealized P&L'];
+
+/**
+ * 粘贴进来的文本，按下面的顺序试：
+ * 1. 带表头的表格（制表符或逗号分隔，比如从网页表格或 Excel 复制）→ 和 CSV 一样按列名认；
+ * 2. 每个格子单独一行（有的网页表格复制出来是这样）→ 按表头的格数重新拼成行；
+ * 3. 没带表头、但一行有 9 格以上且第 4 格是百分比 → 当作 IBKR 网页持仓表的列顺序；
+ * 4. 每行「代码 数量 每股成本」。
+ */
+export function parsePastedHoldings(text: string, lang: Lang = 'zh'): ImportResult {
+  const clean = text.replace(/\u00a0/g, ' ');
+  const lines = clean.split(/\r?\n/).filter((l) => l.trim());
+
+  const asTable = parseHoldingsCsv(clean, lang);
+  if (asTable.holdings.length) return asTable;
+
+  // 2. 一格一行：找连续的表头行
+  let start = -1;
+  let n = 0;
+  for (let i = 0; i < lines.length; i++) {
+    let j = i;
+    while (j < lines.length && isHeaderCell(lines[j]!)) j++;
+    const run = lines.slice(i, j);
+    if (run.length >= 3 && findCol(run, SYMBOL_KEYS) >= 0 && findCol(run, QTY_KEYS) >= 0) {
+      start = i;
+      n = run.length;
+      break;
+    }
+  }
+  if (start >= 0) {
+    const cells = lines.slice(start + n).map((l) => l.trim()).filter((c) => !isJunk(c));
+    const rows: string[] = [lines.slice(start, start + n).map((c) => c.trim()).join('\t')];
+    for (let k = 0; k + n <= cells.length; k += n) rows.push(cells.slice(k, k + n).join('\t'));
+    const r = parseHoldingsCsv(rows.join('\n'), lang);
+    if (r.holdings.length) return r;
+  }
+
+  // 3. IBKR 网页持仓行，没带表头
+  const tabRows = lines.map((l) => l.split('\t').map((c) => c.trim()).filter((c) => !isJunk(c)));
+  const ibkrLike = tabRows.filter((c) => c.length >= IBKR_WEB_COLUMNS.length && /%$/.test(c[3] ?? ''));
+  if (ibkrLike.length && ibkrLike.length >= tabRows.length / 2) {
+    const body = ibkrLike.map((c) => c.slice(0, IBKR_WEB_COLUMNS.length).join('\t'));
+    const r = parseHoldingsCsv([IBKR_WEB_COLUMNS.join('\t'), ...body].join('\n'), lang);
+    if (r.holdings.length) return { ...r, broker: 'IBKR' };
+  }
+
+  return parseHoldingsText(clean);
 }

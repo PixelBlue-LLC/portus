@@ -76,12 +76,17 @@ export function HeatGrid({ sectors, limit = 6 }: { sectors: SectorPerf[]; limit?
         const base = s.changePct < 0 ? 'var(--down)' : 'var(--up)';
         const strong = a > 0.55;
         return (
-          <div key={s.symbol} style={{ background: `color-mix(in srgb, ${base} ${Math.round(a * 100)}%, var(--card))`, color: strong ? '#fff' : 'var(--ink)' }}>
+          <a
+            key={s.symbol}
+            href={`#/market/${s.symbol}`}
+            title={t('heat.open')}
+            style={{ background: `color-mix(in srgb, ${base} ${Math.round(a * 100)}%, var(--card))`, color: strong ? '#fff' : 'var(--ink)', textDecoration: 'none' }}
+          >
             <span className="n">
               {nameIn(s.name, getLang())} {s.symbol}
             </span>
             <span className="v">{signedPct(s.changePct, 1)}</span>
-          </div>
+          </a>
         );
       })}
     </div>

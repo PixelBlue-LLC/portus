@@ -33,6 +33,8 @@ export function buildPortfolio(
       const dayPct = priceSource === 'quote' && q && q.changePct != null ? q.changePct : null;
       // 由当日涨跌幅反推昨收市值：mv / (1 + pct) 再求差
       const dayPnl = dayPct != null ? marketValue - marketValue / (1 + dayPct / 100) : null;
+      // 有昨收就直接减，没有就用涨跌幅反推
+      const dayChange = dayPct == null ? null : q?.prevClose && q.prevClose > 0 ? price - q.prevClose : price - price / (1 + dayPct / 100);
       const { sector, theme, isTech } = h.noQuote ? { sector: '其他', theme: h.theme?.trim() || '其他', isTech: false } : classify(sym, h.theme, industries[sym]);
       return {
         symbol: sym,
@@ -44,6 +46,7 @@ export function buildPortfolio(
         cost,
         marketValue,
         dayPnl,
+        dayChange,
         dayPct,
         totalPnl: marketValue - cost,
         totalPct: cost > 0 ? ((marketValue - cost) / cost) * 100 : null,

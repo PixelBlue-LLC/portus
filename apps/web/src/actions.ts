@@ -65,6 +65,28 @@ export async function refreshQuotes(): Promise<void> {
   }
 }
 
+/** 板块成分股的报价：点开板块时按需拉，5 分钟内拉过的不重复拉 */
+const pickedAt = new Map<string, number>();
+export async function refreshSymbols(symbols: string[]): Promise<string | null> {
+  const s = getState();
+  if (!s.settings.finnhubKey) return null;
+  const now = Date.now();
+  const todo = [...new Set(symbols.map((x) => x.toUpperCase()))].filter((x) => !s.market.quotes[x] || now - (pickedAt.get(x) ?? 0) > 5 * 60000);
+  if (!todo.length) return null;
+  try {
+    const r = await fetchQuotes(todo, s.settings.finnhubKey, false);
+    for (const x of todo) pickedAt.set(x, now);
+    setState((st) => {
+      const quotes = { ...st.market.quotes };
+      for (const [sym, q] of Object.entries(r.quotes)) quotes[sym] = { ...q, high52: quotes[sym]?.high52, low52: quotes[sym]?.low52 };
+      return { market: { ...st.market, quotes } };
+    });
+    return r.errors[0] ?? null;
+  } catch (e) {
+    return e instanceof Error ? e.message : String(e);
+  }
+}
+
 /** 自动刷新：距上次完整刷新超过一小时就做完整刷新，否则只拉报价 */
 export function autoRefresh(): Promise<void> {
   const fullAt = getState().market.fullAt;

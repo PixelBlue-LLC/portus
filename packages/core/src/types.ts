@@ -46,6 +46,8 @@ export interface Position {
   marketValue: number;
   /** 当日盈亏（$）；没有涨跌幅数据时为 null */
   dayPnl: number | null;
+  /** 每股当日涨跌（$）= 现价 − 昨收 */
+  dayChange: number | null;
   dayPct: number | null;
   totalPnl: number;
   totalPct: number | null;

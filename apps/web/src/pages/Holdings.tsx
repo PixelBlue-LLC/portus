@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   accountNames,
   accountOf,
@@ -9,7 +9,7 @@ import {
   mergeHoldings,
   nameIn,
   parseHoldingsCsv,
-  parseHoldingsText,
+  parsePastedHoldings,
   type CashByAccount,
   type Holding,
   type ImportMode,
@@ -19,10 +19,10 @@ import {
 } from 'portus-core';
 import { refreshMarket } from '../actions';
 import type { Derived } from '../derived';
-import { num, signedPct, usd } from '../format';
+import { num, usd } from '../format';
 import { getLang, t } from '../i18n';
 import { setState, updateSettings, type AppState } from '../store';
-import { Card, ConcRow, Money, Pct } from '../ui';
+import { Card, ConcRow, Money } from '../ui';
 
 const PALETTE = ['var(--accent)', 'color-mix(in srgb, var(--accent) 65%, var(--card))', 'var(--warn)', 'color-mix(in srgb, var(--muted) 80%, var(--card))', 'color-mix(in srgb, var(--muted) 50%, var(--card))', 'color-mix(in srgb, var(--muted) 30%, var(--card))'];
 
@@ -46,18 +46,39 @@ const qtyText = (v: number) => v.toLocaleString('en-US', { maximumFractionDigits
 /** 债券、期权等没有代码的行显示券商给的描述 */
 const label = (p: Position) => (p.noQuote ? (p.name ?? p.symbol) : p.symbol);
 
-function PnlCell({ v }: { v: number | null }) {
-  if (v == null) return <td className="num muted">—</td>;
-  return <td className={`num ${v < 0 ? 'neg' : v > 0 ? 'pos' : ''}`}>{signed2(v)}</td>;
+const toneOf = (v: number | null | undefined) => (v == null || v === 0 ? '' : v < 0 ? 'neg' : 'pos');
+const pctText = (v: number) => `${v < 0 ? '−' : '+'}${Math.abs(v).toFixed(2)}%`;
+
+/** 一个格子两行：上面主数字，下面小字（涨跌、均价等） */
+function Two({ main, sub, mainTone = '', subTone = '' }: { main: ReactNode; sub?: ReactNode; mainTone?: string; subTone?: string }) {
+  return (
+    <td className="num">
+      <span className={`m ${mainTone}`}>{main}</span>
+      <span className={`s ${subTone}`}>{sub ?? '\u00a0'}</span>
+    </td>
+  );
 }
 
-/** 宽屏的持仓表：列和券商（IBKR 的 Your Holdings）对齐 */
+/** 「+1.23 · +0.22%」：涨跌金额和百分比放在一起，涨绿跌红 */
+function chg(abs: number | null, pct: number | null): ReactNode {
+  if (abs == null && pct == null) return '—';
+  return [abs != null ? signed2(abs) : null, pct != null ? pctText(pct) : null].filter(Boolean).join(' · ');
+}
+
+/**
+ * 宽屏的持仓表。相关的数字放在同一列上下两行，和券商（Schwab 的 Price / Price Chng $ / Price Chng %）一样：
+ * 现价 + 涨跌，市值 + 当日盈亏，总成本 + 均价，未实现盈亏 $ + %。涨跌一律涨绿跌红（颜色约定可在设置里换）。
+ */
 function HoldingsTable({ positions, cash, showAccounts }: { positions: Position[]; cash: number; showAccounts: boolean }) {
   const lang = getLang();
   const sum = (f: (p: Position) => number) => positions.reduce((a, p) => a + f(p), 0);
   const quoted = positions.filter((p) => !p.noQuote);
   const dayTotal = quoted.length && quoted.every((p) => p.dayPnl != null) ? sum((p) => p.dayPnl ?? 0) : null;
-  const total = sum((p) => p.marketValue) + cash;
+  const mvTotal = sum((p) => p.marketValue);
+  const costTotal = sum((p) => p.cost);
+  const unreal = sum((p) => p.totalPnl);
+  const total = mvTotal + cash;
+  const dayBase = mvTotal - (dayTotal ?? 0);
   return (
     <div className="htable-wrap">
       <table className="htable">
@@ -65,13 +86,10 @@ function HoldingsTable({ positions, cash, showAccounts }: { positions: Position[
           <tr>
             <th scope="col">{t('ht.instrument')}</th>
             <th scope="col" className="num">{t('ht.position')}</th>
-            <th scope="col" className="num">{t('ht.last')}</th>
-            <th scope="col" className="num">{t('ht.change')}</th>
-            <th scope="col" className="num">{t('ht.costBasis')}</th>
-            <th scope="col" className="num">{t('ht.mv')}</th>
-            <th scope="col" className="num">{t('ht.avg')}</th>
-            <th scope="col" className="num">{t('ht.daily')}</th>
-            <th scope="col" className="num">{t('ht.unrealized')}</th>
+            <th scope="col" className="num">{t('ht.last')}<span className="s">{t('ht.lastSub')}</span></th>
+            <th scope="col" className="num">{t('ht.mv')}<span className="s">{t('ht.daily')}</span></th>
+            <th scope="col" className="num">{t('ht.costBasis')}<span className="s">{t('ht.avg')}</span></th>
+            <th scope="col" className="num">{t('ht.unrealized')}<span className="s">{t('ht.unrealSub')}</span></th>
             <th scope="col" className="num">{t('th.weight')}</th>
           </tr>
         </thead>
@@ -88,15 +106,12 @@ function HoldingsTable({ positions, cash, showAccounts }: { positions: Position[
                   <span className="sym" title={p.noQuote ? label(p) : p.name}>{label(p)}</span>
                   <span className="sub">{sub}</span>
                 </th>
-                <td className="num">{qtyText(p.qty)}</td>
-                <td className="num">{n2(p.price)}</td>
-                {p.dayPct != null ? <td className={`num ${p.dayPct < 0 ? 'neg' : p.dayPct > 0 ? 'pos' : ''}`}>{signedPct(p.dayPct)}</td> : <td className="num muted">—</td>}
-                <td className="num">{n2(p.cost)}</td>
-                <td className="num">{n2(p.marketValue)}</td>
-                <td className="num">{n2(p.costBasis)}</td>
-                <PnlCell v={p.dayPnl} />
-                <PnlCell v={p.totalPnl} />
-                <td className="num">{p.weight}%</td>
+                <td className="num"><span className="m">{qtyText(p.qty)}</span><span className="s">&nbsp;</span></td>
+                <Two main={n2(p.price)} sub={chg(p.dayChange, p.dayPct)} subTone={toneOf(p.dayPct)} />
+                <Two main={n2(p.marketValue)} sub={p.dayPnl != null ? signed2(p.dayPnl) : '—'} subTone={toneOf(p.dayPnl)} />
+                <Two main={n2(p.cost)} sub={n2(p.costBasis)} subTone="muted" />
+                <Two main={signed2(p.totalPnl)} mainTone={toneOf(p.totalPnl)} sub={p.totalPct != null ? pctText(p.totalPct) : '—'} subTone={toneOf(p.totalPct)} />
+                <td className="num"><span className="m">{p.weight}%</span><span className="s">&nbsp;</span></td>
               </tr>
             );
           })}
@@ -105,20 +120,18 @@ function HoldingsTable({ positions, cash, showAccounts }: { positions: Position[
           {cash > 0 ? (
             <tr>
               <th scope="row">{t('common.cash')}</th>
-              <td colSpan={4} />
+              <td colSpan={2} />
               <td className="num">{n2(cash)}</td>
-              <td colSpan={3} />
+              <td colSpan={2} />
               <td className="num">{total ? ((cash / total) * 100).toFixed(1) : '0'}%</td>
             </tr>
           ) : null}
           <tr className="total">
             <th scope="row">{t('ht.total')}</th>
-            <td colSpan={3} />
-            <td className="num">{n2(sum((p) => p.cost))}</td>
-            <td className="num">{n2(total)}</td>
-            <td />
-            <PnlCell v={dayTotal} />
-            <PnlCell v={sum((p) => p.totalPnl)} />
+            <td colSpan={2} />
+            <Two main={n2(total)} sub={dayTotal != null ? chg(dayTotal, dayBase > 0 ? (dayTotal / dayBase) * 100 : null) : '—'} subTone={toneOf(dayTotal)} />
+            <Two main={n2(costTotal)} sub="" />
+            <Two main={signed2(unreal)} mainTone={toneOf(unreal)} sub={costTotal > 0 ? pctText((unreal / costTotal) * 100) : '—'} subTone={toneOf(unreal)} />
             <td />
           </tr>
         </tfoot>
@@ -132,41 +145,35 @@ function PositionCard({ p, weightLabel, showAccounts }: { p: Position; weightLab
   return (
     <Card>
       <div className="card-head" style={{ alignItems: 'flex-start' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
           <span style={{ fontSize: 17, fontWeight: 700, overflowWrap: 'anywhere' }}>{label(p)}</span>
           <span className="label">
-            {nameIn(p.theme, getLang())} · {weightLabel} {p.weight}%
+            {p.noQuote ? t('ht.noQuote') : nameIn(p.theme, getLang())} · {weightLabel} {p.weight}%
             {showAccounts && p.accounts?.length ? ` · ${p.accounts.map((a) => accountName(a, getLang())).join(' + ')}` : ''}
           </span>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'flex-end' }}>
-          <span style={{ fontSize: 17, fontWeight: 700 }}>${num(p.price)}</span>
-          <span style={{ fontSize: 13, fontWeight: 600 }}>
-            {p.dayPct != null ? (
-              <>
-                {t('common.today')} <Pct v={p.dayPct} /> · <Money v={p.dayPnl} digits={2} />
-              </>
-            ) : (
-              <span className="muted">{p.noQuote ? t('ht.noQuote') : priceNote(p)}</span>
-            )}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'flex-end', flexShrink: 0 }}>
+          <span style={{ fontSize: 17, fontWeight: 700 }}>${n2(p.price)}</span>
+          <span style={{ fontSize: 13, fontWeight: 600 }} className={toneOf(p.dayPct) || 'muted'}>
+            {p.dayPct != null ? chg(p.dayChange, p.dayPct) : priceNote(p) || '—'}
           </span>
         </div>
       </div>
       <div className="tiles" style={{ gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', fontSize: 13 }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          <span className="label">{t('hold.qtyCost')}</span>
-          <span>{t('hold.sharesAt', { q: qtyText(p.qty), c: n2(p.costBasis) })}</span>
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          <span className="label">{t('col.mv')}</span>
+        <div className="pair">
+          <span className="label">{t('ht.mv')}</span>
           <span>{usd(p.marketValue, 2)}</span>
+          <span className={toneOf(p.dayPnl) || 'muted'}>{p.dayPnl != null ? `${t('common.today')} ${signed2(p.dayPnl)}` : '—'}</span>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <div className="pair">
+          <span className="label">{t('ht.costBasis')}</span>
+          <span>{usd(p.cost, 2)}</span>
+          <span className="muted">{t('hold.sharesAt', { q: qtyText(p.qty), c: n2(p.costBasis) })}</span>
+        </div>
+        <div className="pair">
           <span className="label">{t('ht.unrealized')}</span>
-          <span style={{ fontWeight: 600 }}>
-            <Money v={p.totalPnl} digits={2} />
-            {p.totalPct != null ? <span className={p.totalPnl < 0 ? 'neg' : 'pos'}> · {signedPct(p.totalPct, 1)}</span> : null}
-          </span>
+          <span className={toneOf(p.totalPnl)} style={{ fontWeight: 600 }}>{signed2(p.totalPnl)}</span>
+          <span className={toneOf(p.totalPct)}>{p.totalPct != null ? pctText(p.totalPct) : '—'}</span>
         </div>
       </div>
       {range != null ? (
@@ -333,7 +340,10 @@ export function Holdings({ s, d }: { s: AppState; d: Derived }) {
  * 一行持仓。成本可以按每股填，也可以按总成本填（券商导出的 Cost Basis 一般是总成本）；
  * basis 记住用户最后改的是哪一个，保存时以它为准，避免来回换算丢精度。
  */
-type Row = { symbol: string; qty: string; cost: string; total: string; basis: 'cost' | 'total'; account: string; manualPrice?: number; name?: string; noQuote?: boolean };
+type Row = { symbol: string; qty: string; cost: string; total: string; basis: 'cost' | 'total'; account: string; manualPrice?: number; name?: string; noQuote?: boolean; mv?: string };
+/** 不像股票代码（有空格等）：当作债券、期权这类没有行情的持仓，市值手填 */
+const nonTicker = (sym: string) => !!sym.trim() && !/^[A-Za-z][A-Za-z0-9.\-/]{0,9}$/.test(sym.trim());
+const isNoQuoteRow = (r: Row) => !!r.noQuote || nonTicker(r.symbol);
 const fmt2 = (v: number) => (Number.isFinite(v) && v ? String(Math.round(v * 100) / 100) : '');
 const toRow = (h: Holding): Row => ({
   symbol: h.symbol,
@@ -344,7 +354,7 @@ const toRow = (h: Holding): Row => ({
   account: accountOf(h),
   ...(h.manualPrice ? { manualPrice: h.manualPrice } : {}),
   ...(h.name ? { name: h.name } : {}),
-  ...(h.noQuote ? { noQuote: true } : {}),
+  ...(h.noQuote ? { noQuote: true, mv: fmt2((h.manualPrice ?? h.costBasis) * h.qty) } : {}),
 });
 const blank = (account: string): Row => ({ symbol: '', qty: '', cost: '', total: '', basis: 'cost', account });
 
@@ -357,15 +367,20 @@ function rowCostPerShare(r: Row): number {
 function rowsToHoldings(rs: Row[]): Holding[] {
   return rs
     .filter((r) => r.symbol.trim() && Number(r.qty) > 0)
-    .map((r) => ({
-      symbol: r.noQuote ? r.symbol.trim() : r.symbol.trim().toUpperCase(),
-      qty: Number(r.qty),
-      costBasis: rowCostPerShare(r),
-      account: r.account,
-      ...(r.manualPrice ? { manualPrice: r.manualPrice } : {}),
-      ...(r.name ? { name: r.name } : {}),
-      ...(r.noQuote ? { noQuote: true } : {}),
-    }));
+    .map((r) => {
+      const noQuote = isNoQuoteRow(r);
+      const mv = Number(r.mv);
+      const manualPrice = noQuote && mv > 0 ? mv / Number(r.qty) : r.manualPrice;
+      return {
+        symbol: noQuote ? r.symbol.trim() : r.symbol.trim().toUpperCase(),
+        qty: Number(r.qty),
+        costBasis: rowCostPerShare(r),
+        account: r.account,
+        ...(manualPrice ? { manualPrice } : {}),
+        ...(r.name || noQuote ? { name: r.name ?? r.symbol.trim() } : {}),
+        ...(noQuote ? { noQuote: true } : {}),
+      };
+    });
 }
 
 type Pending = ImportResult & { source: 'csv' | 'paste' };
@@ -408,7 +423,10 @@ export function HoldingsEditor({ s }: { s: AppState }) {
         return next;
       }),
     );
-  const priceOf = (r: Row) => s.market.quotes[r.symbol.trim().toUpperCase()]?.price ?? r.manualPrice;
+  const priceOf = (r: Row) => {
+    if (isNoQuoteRow(r)) return Number(r.mv) > 0 && Number(r.qty) > 0 ? Number(r.mv) / Number(r.qty) : r.manualPrice;
+    return s.market.quotes[r.symbol.trim().toUpperCase()]?.price ?? r.manualPrice;
+  };
   const acctTotals = visible.reduce(
     (t, { r }) => {
       const qty = Number(r.qty) || 0;
@@ -519,11 +537,18 @@ export function HoldingsEditor({ s }: { s: AppState }) {
               <label className="cell"><span className="cell-label">{t('col.qty')}</span><input className="input" inputMode="decimal" value={r.qty} placeholder="10" onChange={(e) => setCell(i, 'qty', e.target.value)} /></label>
               <label className="cell"><span className="cell-label">{t('col.cost')}</span><input className="input" inputMode="decimal" value={r.cost} placeholder="150" onChange={(e) => setCell(i, 'cost', e.target.value)} /></label>
               <label className="cell"><span className="cell-label">{t('col.total')}</span><input className="input" inputMode="decimal" value={r.total} placeholder="1500" onChange={(e) => setCell(i, 'total', e.target.value)} /></label>
-              <span className="cell mv" title={r.name}>
-                <span className="cell-label">{t('col.mv')}</span>
-                <span>{priceOf(r) && Number(r.qty) > 0 ? usd(priceOf(r)! * Number(r.qty), 2) : '—'}</span>
-                {r.name ? <span className="cell-name">{r.name}</span> : null}
-              </span>
+              {isNoQuoteRow(r) ? (
+                <label className="cell" title={t('edit.mvManual')}>
+                  <span className="cell-label">{t('col.mv')}</span>
+                  <input className="input" inputMode="decimal" value={r.mv ?? ''} placeholder={t('edit.mvPh')} aria-label={t('edit.mvManual')} onChange={(e) => setRows((rs) => rs.map((x, j) => (j === i ? { ...x, mv: e.target.value } : x)))} />
+                </label>
+              ) : (
+                <span className="cell mv" title={r.name}>
+                  <span className="cell-label">{t('col.mv')}</span>
+                  <span>{priceOf(r) && Number(r.qty) > 0 ? usd(priceOf(r)! * Number(r.qty), 2) : '—'}</span>
+                  {r.name ? <span className="cell-name">{r.name}</span> : null}
+                </span>
+              )}
               <button className="btn icon small del" aria-label={t('edit.delRow', { s: r.symbol || t('edit.thisRow') })} onClick={() => setRows((rs) => rs.filter((_, j) => j !== i))}>
                 ×
               </button>
@@ -581,13 +606,13 @@ export function HoldingsEditor({ s }: { s: AppState }) {
           <h2>{t('imp.pasteTitle')}</h2>
           <label className="field">
             <span>{t('imp.pasteHint')}</span>
-            <textarea className="input" value={paste} placeholder={'NVDA 30 92\nAAPL 20 150'} onChange={(e) => setPaste(e.target.value)} />
+            <textarea className="input" value={paste} placeholder={'NVDA 30 92\nAAPL 20 150'} rows={5} onChange={(e) => setPaste(e.target.value)} />
           </label>
           <button
             className="btn"
             disabled={!paste.trim()}
             onClick={() => {
-              startImport(parseHoldingsText(paste), 'paste');
+              startImport(parsePastedHoldings(paste, getLang()), 'paste');
               setPaste('');
             }}
           >

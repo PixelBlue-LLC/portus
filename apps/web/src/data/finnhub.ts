@@ -64,8 +64,8 @@ function toQuote(s: string, r: FhQuote): Quote {
 }
 
 /** 只拉报价（持仓 + 板块 ETF + 额外代码），给自动刷新用：每只 1 次请求，不碰新闻和财报 */
-export async function fetchQuotes(symbols: string[], key: string): Promise<{ quotes: Record<string, Quote>; sectors: SectorPerf[]; errors: string[] }> {
-  const sectorSyms = Object.keys(SECTOR_ETFS);
+export async function fetchQuotes(symbols: string[], key: string, withSectors = true): Promise<{ quotes: Record<string, Quote>; sectors: SectorPerf[]; errors: string[] }> {
+  const sectorSyms = withSectors ? Object.keys(SECTOR_ETFS) : [];
   const all = [...new Set([...symbols.map((s) => s.toUpperCase()), ...sectorSyms])];
   const res = await pool(all, 4, (s) => get<FhQuote>('/quote', { symbol: s }, key));
   const quotes: Record<string, Quote> = {};
