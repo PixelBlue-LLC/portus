@@ -46,6 +46,28 @@ const qtyText = (v: number) => v.toLocaleString('en-US', { maximumFractionDigits
 /** 债券、期权等没有代码的行显示券商给的描述 */
 const label = (p: Position) => (p.noQuote ? (p.name ?? p.symbol) : p.symbol);
 
+/** 没有行情的持仓，市值登记超过这么多天就标黄提醒更新 */
+const STALE_DAYS = 30;
+
+function dateLabel(iso: string): string {
+  const d = new Date(iso);
+  const sameYear = d.getFullYear() === new Date().getFullYear();
+  return d.toLocaleDateString(getLang() === 'zh' ? 'zh-CN' : 'en-US', { year: sameYear ? undefined : 'numeric', month: getLang() === 'zh' ? 'numeric' : 'short', day: 'numeric' });
+}
+
+/** 「不拉行情 · 市值登记于 11月18日」；超过 30 天或不知道日期时标黄 */
+function ValuedNote({ at }: { at?: string }) {
+  if (!at) return <span className="warn-text">{t('ht.noQuote')} · {t('ht.valuedUnknown')}</span>;
+  const days = Math.floor((Date.now() - Date.parse(at)) / 864e5);
+  const old = days > STALE_DAYS;
+  return (
+    <span className={old ? 'warn-text' : undefined} title={new Date(at).toLocaleString()}>
+      {t('ht.noQuote')} · {t('ht.valuedAt', { d: dateLabel(at) })}
+      {old ? t('ht.valuedOld', { n: days }) : ''}
+    </span>
+  );
+}
+
 const toneOf = (v: number | null | undefined) => (v == null || v === 0 ? '' : v < 0 ? 'neg' : 'pos');
 const pctText = (v: number) => `${v < 0 ? '−' : '+'}${Math.abs(v).toFixed(2)}%`;
 
@@ -96,7 +118,7 @@ function HoldingsTable({ positions, cash, showAccounts }: { positions: Position[
         <tbody>
           {positions.map((p) => {
             const sub = p.noQuote
-              ? t('ht.noQuote')
+              ? <ValuedNote at={p.valuedAt} />
               : [nameIn(p.theme, lang), p.priceSource !== 'quote' ? priceNote(p) : '', showAccounts && p.accounts?.length ? p.accounts.map((a) => accountName(a, lang)).join(' + ') : '']
                   .filter(Boolean)
                   .join(' · ');
@@ -148,7 +170,7 @@ function PositionCard({ p, weightLabel, showAccounts }: { p: Position; weightLab
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
           <span style={{ fontSize: 17, fontWeight: 700, overflowWrap: 'anywhere' }}>{label(p)}</span>
           <span className="label">
-            {p.noQuote ? t('ht.noQuote') : nameIn(p.theme, getLang())} · {weightLabel} {p.weight}%
+            {p.noQuote ? <ValuedNote at={p.valuedAt} /> : nameIn(p.theme, getLang())} · {weightLabel} {p.weight}%
             {showAccounts && p.accounts?.length ? ` · ${p.accounts.map((a) => accountName(a, getLang())).join(' + ')}` : ''}
           </span>
         </div>
@@ -340,7 +362,7 @@ export function Holdings({ s, d }: { s: AppState; d: Derived }) {
  * 一行持仓。成本可以按每股填，也可以按总成本填（券商导出的 Cost Basis 一般是总成本）；
  * basis 记住用户最后改的是哪一个，保存时以它为准，避免来回换算丢精度。
  */
-type Row = { symbol: string; qty: string; cost: string; total: string; basis: 'cost' | 'total'; account: string; manualPrice?: number; name?: string; noQuote?: boolean; mv?: string };
+type Row = { symbol: string; qty: string; cost: string; total: string; basis: 'cost' | 'total'; account: string; manualPrice?: number; name?: string; noQuote?: boolean; mv?: string; valuedAt?: string };
 /** 不像股票代码（有空格等）：当作债券、期权这类没有行情的持仓，市值手填 */
 const nonTicker = (sym: string) => !!sym.trim() && !/^[A-Za-z][A-Za-z0-9.\-/]{0,9}$/.test(sym.trim());
 const isNoQuoteRow = (r: Row) => !!r.noQuote || nonTicker(r.symbol);
@@ -354,7 +376,7 @@ const toRow = (h: Holding): Row => ({
   account: accountOf(h),
   ...(h.manualPrice ? { manualPrice: h.manualPrice } : {}),
   ...(h.name ? { name: h.name } : {}),
-  ...(h.noQuote ? { noQuote: true, mv: fmt2((h.manualPrice ?? h.costBasis) * h.qty) } : {}),
+  ...(h.noQuote ? { noQuote: true, mv: fmt2((h.manualPrice ?? h.costBasis) * h.qty), ...(h.valuedAt ? { valuedAt: h.valuedAt } : {}) } : {}),
 });
 const blank = (account: string): Row => ({ symbol: '', qty: '', cost: '', total: '', basis: 'cost', account });
 
@@ -378,7 +400,8 @@ function rowsToHoldings(rs: Row[]): Holding[] {
         account: r.account,
         ...(manualPrice ? { manualPrice } : {}),
         ...(r.name || noQuote ? { name: r.name ?? r.symbol.trim() } : {}),
-        ...(noQuote ? { noQuote: true } : {}),
+        // 手动新加、还没记过日期的行，保存时记成现在
+        ...(noQuote ? { noQuote: true, valuedAt: r.valuedAt ?? new Date().toISOString() } : {}),
       };
     });
 }
@@ -460,7 +483,9 @@ export function HoldingsEditor({ s }: { s: AppState }) {
       return;
     }
     setMsg('');
-    setPending({ ...r, source });
+    // 导入的债券、期权等：市值就是今天券商给的，记下登记时间
+    const now = new Date().toISOString();
+    setPending({ ...r, holdings: r.holdings.map((h) => (h.noQuote ? { ...h, valuedAt: now } : h)), source });
   };
 
   const save = () => {
@@ -540,7 +565,8 @@ export function HoldingsEditor({ s }: { s: AppState }) {
               {isNoQuoteRow(r) ? (
                 <label className="cell" title={t('edit.mvManual')}>
                   <span className="cell-label">{t('col.mv')}</span>
-                  <input className="input" inputMode="decimal" value={r.mv ?? ''} placeholder={t('edit.mvPh')} aria-label={t('edit.mvManual')} onChange={(e) => setRows((rs) => rs.map((x, j) => (j === i ? { ...x, mv: e.target.value } : x)))} />
+                  <input className="input" inputMode="decimal" value={r.mv ?? ''} placeholder={t('edit.mvPh')} aria-label={t('edit.mvManual')} onChange={(e) => setRows((rs) => rs.map((x, j) => (j === i ? { ...x, mv: e.target.value, valuedAt: new Date().toISOString() } : x)))} />
+                  {r.valuedAt ? <span className="cell-name">{t('ht.valuedAt', { d: dateLabel(r.valuedAt) })}</span> : null}
                 </label>
               ) : (
                 <span className="cell mv" title={r.name}>

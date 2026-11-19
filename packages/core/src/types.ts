@@ -18,6 +18,8 @@ export interface Holding {
    * 价格固定用导入时的「市值 ÷ 数量」，name 里是券商给的原始描述。
    */
   noQuote?: boolean;
+  /** noQuote 的持仓：市值是哪天登记的（ISO 时间）。没有行情，用户要知道这个数有多旧 */
+  valuedAt?: string;
 }
 
 /** 行情源返回的一只标的的报价 */
@@ -62,6 +64,8 @@ export interface Position {
   low52?: number;
   /** 见 Holding.noQuote */
   noQuote?: boolean;
+  /** 见 Holding.valuedAt */
+  valuedAt?: string;
 }
 
 export interface PortfolioView {

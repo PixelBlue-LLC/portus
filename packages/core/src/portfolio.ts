@@ -57,7 +57,7 @@ export function buildPortfolio(
         ...(h.accounts ? { accounts: h.accounts } : {}),
         high52: h.noQuote ? undefined : q?.high52,
         low52: h.noQuote ? undefined : q?.low52,
-        ...(h.noQuote ? { noQuote: true } : {}),
+        ...(h.noQuote ? { noQuote: true, ...(h.valuedAt ? { valuedAt: h.valuedAt } : {}) } : {}),
       } satisfies Position;
     });
 

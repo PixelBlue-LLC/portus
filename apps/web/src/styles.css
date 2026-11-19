@@ -364,3 +364,4 @@ a:focus-visible, button:focus-visible, select:focus-visible, .acct-chip:focus-vi
   .mv-contrib .dbar { display: none; }
   .mv-row.head span:last-child { text-align: right; }
 }
+.warn-text { color: var(--warn-text); }

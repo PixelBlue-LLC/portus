@@ -183,3 +183,18 @@ describe('每股涨跌和板块成分股', () => {
     expect(etfMovers('XLE', {}, { XLE: [['ZZZ', 50]] })!.rows[0]!.symbol).toBe('ZZZ');
   });
 });
+
+describe('没有行情的持仓带登记时间', () => {
+  it('估值时带出来；跨账户合并时取最旧的', () => {
+    const bond = { symbol: 'T 2030', qty: 1, costBasis: 1000, manualPrice: 990, noQuote: true };
+    const merged = aggregateBySymbol([
+      { ...bond, account: 'A', valuedAt: '2026-11-10T18:00:00Z' },
+      { ...bond, account: 'B', valuedAt: '2026-10-01T18:00:00Z' },
+    ]);
+    expect(merged[0]!.valuedAt).toBe('2026-10-01T18:00:00Z');
+    const v = buildPortfolio(merged, {}, 0);
+    expect(v.positions[0]!.valuedAt).toBe('2026-10-01T18:00:00Z');
+    // 有代码的股票不带这个字段
+    expect(buildPortfolio([{ symbol: 'AAA', qty: 1, costBasis: 1, valuedAt: '2026-10-01' }], {}, 0).positions[0]!.valuedAt).toBeUndefined();
+  });
+});

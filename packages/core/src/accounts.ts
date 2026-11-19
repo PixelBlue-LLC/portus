@@ -49,6 +49,9 @@ export function aggregateBySymbol(holdings: Holding[]): Holding[] {
     cur.theme = cur.theme ?? h.theme;
     cur.name = cur.name ?? h.name;
     cur.noQuote = cur.noQuote || h.noQuote || undefined;
+    // 同一只债券分在几个账户、登记日期不同时，按最旧的那个显示
+    const dates = [cur.valuedAt, h.valuedAt].filter((x): x is string => !!x).sort();
+    cur.valuedAt = dates[0];
     if (!cur.accounts.includes(acct)) cur.accounts.push(acct);
   }
   return [...map.values()];
