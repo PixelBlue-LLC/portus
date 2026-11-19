@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildPortfolio, etfMovers, parseHoldingsCsv, parsePastedHoldings, shouldAutoRefresh, usMarketSession, aggregateBySymbol } from '../src';
+import { buildPortfolio, ETF_HOLDINGS, etfMovers, etfTop, parseHoldingsCsv, parsePastedHoldings, shouldAutoRefresh, usMarketSession, aggregateBySymbol } from '../src';
 
 // 全部用固定时刻（UTC），不依赖真实的「现在」
 const at = (iso: string) => new Date(iso);
@@ -172,15 +172,29 @@ describe('每股涨跌和板块成分股', () => {
     expect(v.positions[0]!.dayChange).toBeCloseTo(1, 6);
   });
   it('按贡献（权重 × 涨跌幅）排序', () => {
+    const w = (sym: string) => ETF_HOLDINGS.XLE!.top.find((r) => r[0] === sym)![1];
     const m = etfMovers('XLE', { XOM: { changePct: -4 }, CVX: { changePct: -1 }, COP: { changePct: 2 } })!;
-    expect(m.rows[0]).toMatchObject({ symbol: 'XOM', contribution: -0.973 });
-    expect(m.rows[1]!.symbol).toBe('CVX');
-    expect(m.rows[2]!.symbol).toBe('COP');
+    expect(m.rows[0]!.symbol).toBe('XOM');
+    expect(m.rows[0]!.contribution).toBeCloseTo((w('XOM') * -4) / 100, 3);
+    expect(m.rows.slice(1, 3).map((r) => r.symbol).sort()).toEqual(['COP', 'CVX']);
     expect(m.rows.at(-1)!.contribution).toBeNull();
-    expect(m.explained).toBeCloseTo(-0.973 - 0.185 + 0.145, 2);
+    expect(m.live).toBe(false);
     expect(etfMovers('NOPE', {})).toBeNull();
     // 用户自己填的成分表优先
     expect(etfMovers('XLE', {}, { XLE: [['ZZZ', 50]] })!.rows[0]!.symbol).toBe('ZZZ');
+  });
+  it('带每份股数的表按现价重算权重；缺一个报价就用数据日期的权重', () => {
+    // 虚构一张两只成分的表：每份 ETF 含 A 0.5 股、B 0.25 股
+    ETF_HOLDINGS.TEST1 = { name: 'test', asOf: '2026-11-17', top: [['AAA', 40, 0.5], ['BBB', 30, 0.25]] };
+    const live = etfTop('TEST1', {}, { TEST1: { price: 100, changePct: 0 }, AAA: { price: 100, changePct: 0 }, BBB: { price: 80, changePct: 0 } })!;
+    expect(live.live).toBe(true);
+    expect(live.top).toEqual([['AAA', 50], ['BBB', 20]]);
+    const fixed = etfTop('TEST1', {}, { TEST1: { price: 100, changePct: 0 }, AAA: { price: 100, changePct: 0 } })!;
+    expect(fixed.live).toBe(false);
+    expect(fixed.top).toEqual([['AAA', 40], ['BBB', 30]]);
+    // 价格明显不对（比如 ETF 报价错了一个数量级），算出来的合计离谱，就用数据日期的权重
+    expect(etfTop('TEST1', {}, { TEST1: { price: 10, changePct: 0 }, AAA: { price: 100, changePct: 0 }, BBB: { price: 80, changePct: 0 } })!.live).toBe(false);
+    delete ETF_HOLDINGS.TEST1;
   });
 });
 
@@ -212,5 +226,38 @@ describe('日历同一天内的顺序', () => {
     // 2027-01-13 有 CPI 08:30
     expect(ev.map((e) => e.symbol ?? e.kind)).toEqual(['CCC', 'cpi', 'BBB', 'AAA']);
     expect(ev.find((e) => e.symbol === 'AAA')!.session).toBe('amc');
+  });
+});
+
+describe('观望列表', () => {
+  it('起点以来的涨跌、离目标价还差多少、是否到达', async () => {
+    const { watchStatus } = await import('../src');
+    const up = { symbol: 'AAA', addedAt: '2026-11-10', addedPrice: 100, target: 120 };
+    expect(watchStatus(up, 110)).toEqual({ sincePct: 10, toTargetPct: 9.09, direction: 'up', reached: false });
+    expect(watchStatus(up, 121).reached).toBe(true);
+    // 目标价在起点下方：等它跌到
+    const down = { symbol: 'BBB', addedAt: '2026-11-10', addedPrice: 100, target: 90 };
+    expect(watchStatus(down, 95)).toMatchObject({ direction: 'down', toTargetPct: -5.26, reached: false });
+    expect(watchStatus(down, 89.5).reached).toBe(true);
+    // 没有报价、没有目标价
+    expect(watchStatus({ symbol: 'CCC', addedAt: '2026-11-10' }, null)).toEqual({ sincePct: null, toTargetPct: null, direction: null, reached: false });
+  });
+});
+
+describe('热力图排列', () => {
+  it('走势相近的排在一起，数据不够的放最后', async () => {
+    const { orderByCorrelation } = await import('../src');
+    const m = {
+      symbols: ['A', 'B', 'C', 'D'],
+      values: [
+        [1, 0.1, 0.9, null],
+        [0.1, 1, 0.2, null],
+        [0.9, 0.2, 1, null],
+        [null, null, null, 1],
+      ],
+      days: [],
+      missing: ['D'],
+    };
+    expect(orderByCorrelation(m)).toEqual(['C', 'A', 'B', 'D']);
   });
 });

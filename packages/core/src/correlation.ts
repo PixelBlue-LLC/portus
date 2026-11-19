@@ -123,3 +123,30 @@ export function weightedCorrelation(m: CorrelationMatrix, candidate: string, wei
   });
   return wsum ? Math.round((sum / wsum) * 100) / 100 : null;
 }
+
+/**
+ * 热力图的排列顺序：把走势相近的放在一起。
+ * 简单的贪心链：先放平均相关性最高的，再每次接上和最后一个最相关的。数据不够的放最后，保持原顺序。
+ */
+export function orderByCorrelation(m: CorrelationMatrix): string[] {
+  const n = m.symbols.length;
+  const ok = m.symbols.map((s, i) => i).filter((i) => !m.missing.includes(m.symbols[i]!));
+  const avg = (i: number) => {
+    const vs = ok.filter((j) => j !== i).map((j) => m.values[i]![j]).filter((v): v is number => v != null);
+    return vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : -2;
+  };
+  const left = new Set(ok);
+  const out: number[] = [];
+  if (left.size) {
+    let cur = [...left].sort((a, b) => avg(b) - avg(a))[0]!;
+    while (left.size) {
+      out.push(cur);
+      left.delete(cur);
+      if (!left.size) break;
+      const from = cur;
+      cur = [...left].sort((a, b) => (m.values[from]![b] ?? -2) - (m.values[from]![a] ?? -2))[0]!;
+    }
+  }
+  for (let i = 0; i < n; i++) if (!out.includes(i)) out.push(i);
+  return out.map((i) => m.symbols[i]!);
+}

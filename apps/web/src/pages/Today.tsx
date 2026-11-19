@@ -6,7 +6,7 @@ import { ageMinutes, signedPct, signedUsd, timeLabel, usd } from '../format';
 import { getLang, t } from '../i18n';
 import { loadSample, setState, type AppState } from '../store';
 import { EventLine, upcomingEvents } from './Calendar';
-import { overdueTranches, staleDayOrders } from 'portus-core';
+import { overdueTranches, staleDayOrders, watchStatus } from 'portus-core';
 import { todayLocal } from '../actions';
 import { Card, ConcRow, HeatGrid, Money, Pct, Tile, tone } from '../ui';
 
@@ -295,7 +295,9 @@ function AlertsSummary({ s, d }: { s: AppState; d: Derived }) {
   const active = s.plans.filter((p) => !p.archived);
   const overdue = active.reduce((n, p) => n + overdueTranches(p, today).length, 0);
   const stale = active.reduce((n, p) => n + staleDayOrders(p, today).length, 0);
-  if (!d.alertHits.length && !overdue && !stale) return null;
+  // 观望列表里到了用户自己设的目标价的
+  const watchHits = (s.watchlist ?? []).filter((w) => w.target && watchStatus(w, s.market.quotes[w.symbol]?.price).reached);
+  if (!d.alertHits.length && !overdue && !stale && !watchHits.length) return null;
   return (
     <Card className="alert-card">
       <div className="card-head">
@@ -307,6 +309,9 @@ function AlertsSummary({ s, d }: { s: AppState; d: Derived }) {
       <ul className="list" style={{ fontSize: 14 }}>
         {d.alertHits.map((h) => (
           <li key={h.id + h.subject}>{h.text}</li>
+        ))}
+        {watchHits.map((w) => (
+          <li key={'w' + w.symbol}>{t('watch.hit', { s: w.symbol, t: w.target!.toFixed(2), p: s.market.quotes[w.symbol]!.price.toFixed(2) })}</li>
         ))}
         {overdue ? <li>{t('plan.overdue', { n: overdue })}</li> : null}
         {stale ? <li>{t('plan.staleDay', { n: stale })}</li> : null}

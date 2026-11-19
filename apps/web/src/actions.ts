@@ -1,4 +1,4 @@
-import { alertSymbols, attributionPrompt, askPrompt, etfMovers, nameIn, sectorPrompt, SECTOR_ETFS, TRANSLATE_SYSTEM_PROMPT } from 'portus-core';
+import { watchStatus, alertSymbols, attributionPrompt, askPrompt, etfMovers, nameIn, sectorPrompt, SECTOR_ETFS, TRANSLATE_SYSTEM_PROMPT } from 'portus-core';
 import { askClaude } from './data/anthropic';
 import { fetchHeadlines, fetchMarket, fetchQuotes } from './data/finnhub';
 import { getLang, t } from './i18n';
@@ -68,12 +68,23 @@ export async function refreshQuotes(): Promise<void> {
   }
 }
 
-/** 观望列表里还没有「加入时价格」的，用刚拉到的报价补上 */
+/**
+ * 观望列表：还没有起点价的，用刚拉到的报价补上；第一次到达用户设的目标价时记下时间。
+ */
 function backfillWatch() {
   setState((st) => {
     const list = st.watchlist ?? [];
-    if (!list.some((w) => w.addedPrice == null && st.market.quotes[w.symbol])) return {};
-    return { watchlist: list.map((w) => (w.addedPrice == null && st.market.quotes[w.symbol] ? { ...w, addedPrice: st.market.quotes[w.symbol]!.price } : w)) };
+    let changed = false;
+    const next = list.map((w) => {
+      const q = st.market.quotes[w.symbol];
+      if (!q) return w;
+      let x = w;
+      if (x.addedPrice == null) x = { ...x, addedPrice: q.price };
+      if (!x.reachedAt && watchStatus(x, q.price).reached) x = { ...x, reachedAt: new Date().toISOString() };
+      if (x !== w) changed = true;
+      return x;
+    });
+    return changed ? { watchlist: next } : {};
   });
 }
 

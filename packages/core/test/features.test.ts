@@ -167,7 +167,7 @@ describe('ETF 穿透', () => {
       (s) => s === 'ABCD',
     );
     expect(r.rows.find((x) => x.symbol === 'NVDA')!.viaEtf).toBe(185);
-    expect(r.etfs).toEqual([{ symbol: 'VGT', value: 1000, asOf: '', custom: true, coveredPct: 45.6 }]);
+    expect(r.etfs).toEqual([{ symbol: 'VGT', value: 1000, asOf: '', live: false, custom: true, coveredPct: 45.6 }]);
     expect(r.unknownEtfs).toEqual(['ABCD']);
   });
 });

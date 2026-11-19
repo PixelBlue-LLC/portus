@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import type { LangPref } from './i18n';
 import { t } from './i18n';
-import { DEFAULT_ACCOUNT, DEFAULT_RULES, type AlertRule, type CashByAccount, type ConcentrationRule, type DailyBar, type Holding, type NewsItem, type OptionContract, type Plan, type Quote, type SectorPerf } from 'portus-core';
+import { DEFAULT_ACCOUNT, DEFAULT_RULES, type WatchItem, type AlertRule, type CashByAccount, type ConcentrationRule, type DailyBar, type Holding, type NewsItem, type OptionContract, type Plan, type Quote, type SectorPerf } from 'portus-core';
 
 export type ThemePref = 'system' | 'light' | 'dark';
 
@@ -89,14 +89,6 @@ export interface AppState {
   watchlist?: WatchItem[];
 }
 
-export interface WatchItem {
-  symbol: string;
-  /** 加进来的时间（ISO） */
-  addedAt: string;
-  /** 加进来时的价格，用来算「加入以来」的涨跌 */
-  addedPrice?: number;
-  note?: string;
-}
 
 export interface HistoryCache {
   bars: Record<string, DailyBar[]>;

@@ -406,11 +406,39 @@ a:focus-visible, button:focus-visible, select:focus-visible, .acct-chip:focus-vi
 
 /* ---------- 观望列表 ---------- */
 .watch-list { display: flex; flex-direction: column; }
-.watch-row { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr) 40px; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line2); font-variant-numeric: tabular-nums; }
+.watch-row { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 1.1fr) auto; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line2); font-variant-numeric: tabular-nums; }
+.watch-row.head { font-size: 11px; color: var(--muted); padding-top: 0; }
+.watch-row.reached { background: color-mix(in srgb, var(--warn) 10%, transparent); }
 .watch-row .num { text-align: right; display: flex; flex-direction: column; }
 .watch-row .m { font-size: 14px; font-weight: 600; }
 .watch-row .s { font-size: 12px; }
 .w-sym { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-weight: 700; min-width: 0; }
 .w-note { font-weight: 400; flex-basis: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.watch-add { display: grid; grid-template-columns: 110px minmax(0, 1fr) auto; gap: 6px; }
+.w-act { display: flex; gap: 4px; }
+.w-act .btn.small { min-height: 32px; padding: 0 10px; }
+.w-act .btn.icon { width: 32px; }
+.watch-edit { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)) auto; gap: 8px; padding: 10px 0; border-bottom: 1px solid var(--line2); }
+.watch-edit .input { min-height: 36px; font-size: 14px; }
+.watch-add { display: grid; grid-template-columns: 100px 130px minmax(0, 1fr) auto; gap: 6px; }
 .watch-add .input { min-height: 36px; font-size: 14px; }
+@media (max-width: 640px) {
+  .watch-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; }
+  .watch-row.head { display: none; }
+  .watch-row > .num:nth-child(3), .watch-row > .num:nth-child(4) { text-align: left; }
+  .watch-row > .num:nth-child(3) { grid-column: 1; }
+  .watch-row > .num:nth-child(4) { grid-column: 2; text-align: right; }
+  .watch-edit, .watch-add { grid-template-columns: 1fr 1fr; }
+}
+
+/* ---------- 相关性热力图 ---------- */
+.heat-wrap { overflow-x: auto; }
+.heatmap { display: grid; gap: 2px; font-size: 11px; font-variant-numeric: tabular-nums; width: max-content; }
+.hm-col { writing-mode: vertical-rl; transform: rotate(180deg); justify-self: center; padding: 4px 0; font-weight: 600; color: var(--body); }
+.hm-row { display: flex; align-items: center; justify-content: flex-end; padding-right: 6px; font-weight: 600; color: var(--body); }
+.hm-col.extra, .hm-row.extra { color: var(--muted); font-weight: 400; }
+.hm-col.on, .hm-row.on { color: var(--link); }
+.hm-c { aspect-ratio: 1; min-width: 30px; display: flex; align-items: center; justify-content: center; border-radius: 4px; cursor: default; outline-offset: -2px; }
+.hm-c.line { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 25%, transparent); }
+.hm-legend { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); max-width: 320px; }
+.hm-legend i { flex: 1; height: 8px; border-radius: 4px; background: linear-gradient(to right, #1c7ed6, var(--line2)); }
+.hm-legend i.pos { background: linear-gradient(to right, var(--line2), #e8590c); }

@@ -56,7 +56,7 @@ function Movers({ s, d, etf, change }: { s: AppState; d: Derived; etf: string; c
   return (
     <div className="movers">
       <span className="label">
-        {t('sec.moversHead', { c: data.coveredPct, d: data.custom ? t('sec.custom') : data.asOf })}
+        {t(data.live ? 'sec.moversLive' : 'sec.moversHead', { c: data.coveredPct, d: data.custom ? t('sec.custom') : data.asOf })}
         {data.explained != null ? t('sec.explained', { e: pp(data.explained), x: signedPct(change) }) : ''}
       </span>
       {data.coveredPct < 20 ? <span className="label">{t('sec.lowCoverage')}</span> : null}
