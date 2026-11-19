@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { attributionFallback, riskBandName } from 'portus-core';
-import { refreshMarket, runAttribution } from '../actions';
+import { runAttribution } from '../actions';
 import type { Derived } from '../derived';
 import { ageMinutes, signedPct, signedUsd, timeLabel, usd } from '../format';
 import { getLang, t } from '../i18n';
@@ -27,20 +27,9 @@ export function Today({ s, d }: { s: AppState; d: Derived }) {
       <header className="page-head">
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           <span className="title">{t('nav.today')}</span>
-          <span className="label">
-            {s.market.fetchedAt ? t('today.quotesUpdated', { t: timeLabel(s.market.fetchedAt) }) : t('today.manualPrices')}
-          </span>
+          {!s.settings.finnhubKey ? <span className="label">{t('today.manualPrices')}</span> : null}
         </div>
         <div className="row" style={{ flexWrap: 'nowrap' }}>
-          {s.settings.finnhubKey ? (
-            <button className="btn" onClick={() => void refreshMarket()} disabled={s.loading}>
-              {s.loading ? t('common.refreshing') : t('common.refresh')}
-            </button>
-          ) : (
-            <a className="btn" href="#/settings">
-              {t('common.connectData')}
-            </a>
-          )}
           <a className="btn mobile-only" href="#/settings">
             {t('nav.settings')}
           </a>
@@ -221,6 +210,7 @@ function Attribution({ s, d }: { s: AppState; d: Derived }) {
           >
             {busy ? t('attr.busy') : s.attribution ? t('attr.redo') : t('attr.run')}
           </button>
+          {s.attribution && !busy ? <span className="label">{t('attr.at', { t: timeLabel(s.attribution.at) })}</span> : null}
           {err ? <span className="neg" style={{ fontSize: 13 }}>{err}</span> : null}
         </div>
       ) : (

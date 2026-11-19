@@ -48,6 +48,7 @@ export function aggregateBySymbol(holdings: Holding[]): Holding[] {
     cur.manualPrice = cur.manualPrice ?? h.manualPrice;
     cur.theme = cur.theme ?? h.theme;
     cur.name = cur.name ?? h.name;
+    cur.noQuote = cur.noQuote || h.noQuote || undefined;
     if (!cur.accounts.includes(acct)) cur.accounts.push(acct);
   }
   return [...map.values()];

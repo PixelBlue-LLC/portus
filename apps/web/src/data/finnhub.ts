@@ -59,6 +59,28 @@ export interface MarketFetch {
   errors: string[];
 }
 
+function toQuote(s: string, r: FhQuote): Quote {
+  return { symbol: s, price: r.c, changePct: r.dp, prevClose: r.pc, asOf: new Date((r.t || Date.now() / 1000) * 1000).toISOString() };
+}
+
+/** 只拉报价（持仓 + 板块 ETF + 额外代码），给自动刷新用：每只 1 次请求，不碰新闻和财报 */
+export async function fetchQuotes(symbols: string[], key: string): Promise<{ quotes: Record<string, Quote>; sectors: SectorPerf[]; errors: string[] }> {
+  const sectorSyms = Object.keys(SECTOR_ETFS);
+  const all = [...new Set([...symbols.map((s) => s.toUpperCase()), ...sectorSyms])];
+  const res = await pool(all, 4, (s) => get<FhQuote>('/quote', { symbol: s }, key));
+  const quotes: Record<string, Quote> = {};
+  const errors = new Set<string>();
+  all.forEach((s, i) => {
+    const r = res[i];
+    if (r instanceof Error) errors.add(r.message);
+    else if (r && r.c > 0) quotes[s] = toQuote(s, r);
+  });
+  const sectors = sectorSyms
+    .filter((s) => quotes[s]?.changePct != null)
+    .map((s) => ({ symbol: s, name: SECTOR_ETFS[s]!, changePct: quotes[s]!.changePct! }));
+  return { quotes, sectors, errors: [...errors] };
+}
+
 /**
  * extraSymbols：只要报价的代码（提醒规则、分批计划、相关性候选里出现但没持有的），不查新闻和行业。
  */
@@ -77,7 +99,7 @@ export async function fetchMarket(symbols: string[], key: string, knownIndustrie
     const r = quoteRes[i];
     note(r);
     if (r && !(r instanceof Error) && r.c > 0) {
-      quotes[s] = { symbol: s, price: r.c, changePct: r.dp, prevClose: r.pc, asOf: new Date((r.t || Date.now() / 1000) * 1000).toISOString() };
+      quotes[s] = toQuote(s, r);
     }
   });
 

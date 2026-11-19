@@ -68,14 +68,16 @@ export function subline(view: PortfolioView, lang: Lang = 'zh'): string {
     .filter((p) => p.dayPnl != null && (losing ? p.dayPnl < 0 : p.dayPnl > 0))
     .sort((a, b) => Math.abs(b.dayPnl!) - Math.abs(a.dayPnl!));
   if (!movers.length) return '';
+  // 分母用同方向的合计（所有上涨仓位的盈利之和），不用账户净额：有涨有跌时净额更小，比例会超过 100%
+  const gross = movers.reduce((s, m) => s + Math.abs(m.dayPnl!), 0);
   let acc = 0;
   const names: string[] = [];
   for (const m of movers) {
     acc += Math.abs(m.dayPnl!);
     names.push(m.symbol);
-    if (acc / Math.abs(view.dayPnl) >= 0.7 || names.length >= 3) break;
+    if (acc / gross >= 0.7 || names.length >= 3) break;
   }
-  const share = Math.round((acc / Math.abs(view.dayPnl)) * 100);
+  const share = Math.round((acc / gross) * 100);
   return lang === 'zh'
     ? `${losing ? '亏损' : '盈利'}的 ${share}% 来自 ${joinList(names, lang)}。`
     : `${share}% of the ${losing ? 'loss' : 'gain'} came from ${joinList(names, lang)}.`;

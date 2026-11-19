@@ -18,7 +18,7 @@ export function buildPortfolio(
       const q = quotes[sym];
       let price: number;
       let priceSource: Position['priceSource'];
-      if (q && q.price > 0) {
+      if (q && q.price > 0 && !h.noQuote) {
         price = q.price;
         priceSource = 'quote';
       } else if (h.manualPrice && h.manualPrice > 0) {
@@ -33,7 +33,7 @@ export function buildPortfolio(
       const dayPct = priceSource === 'quote' && q && q.changePct != null ? q.changePct : null;
       // 由当日涨跌幅反推昨收市值：mv / (1 + pct) 再求差
       const dayPnl = dayPct != null ? marketValue - marketValue / (1 + dayPct / 100) : null;
-      const { sector, theme, isTech } = classify(sym, h.theme, industries[sym]);
+      const { sector, theme, isTech } = h.noQuote ? { sector: '其他', theme: h.theme?.trim() || '其他', isTech: false } : classify(sym, h.theme, industries[sym]);
       return {
         symbol: sym,
         name: h.name,
@@ -41,6 +41,7 @@ export function buildPortfolio(
         costBasis: h.costBasis,
         price,
         priceSource,
+        cost,
         marketValue,
         dayPnl,
         dayPct,
@@ -51,8 +52,9 @@ export function buildPortfolio(
         isTech,
         weight: 0,
         ...(h.accounts ? { accounts: h.accounts } : {}),
-        high52: q?.high52,
-        low52: q?.low52,
+        high52: h.noQuote ? undefined : q?.high52,
+        low52: h.noQuote ? undefined : q?.low52,
+        ...(h.noQuote ? { noQuote: true } : {}),
       } satisfies Position;
     });
 
@@ -61,12 +63,14 @@ export function buildPortfolio(
   for (const r of rows) r.weight = totalValue > 0 ? round((r.marketValue / totalValue) * 100, 1) : 0;
   rows.sort((a, b) => b.marketValue - a.marketValue);
 
-  const allDay = rows.length > 0 && rows.every((r) => r.dayPnl != null);
+  // 债券、期权等不拉行情的行没有当日涨跌，不影响合计；其余每只都有涨跌幅时才给合计
+  const quoted = rows.filter((r) => !r.noQuote);
+  const allDay = quoted.length > 0 && quoted.every((r) => r.dayPnl != null);
   return {
     positions: rows,
     cash: Math.max(0, cash),
     totalValue,
-    dayPnl: allDay ? rows.reduce((s, r) => s + (r.dayPnl ?? 0), 0) : null,
+    dayPnl: allDay ? quoted.reduce((s, r) => s + (r.dayPnl ?? 0), 0) : null,
     totalPnl: rows.reduce((s, r) => s + r.totalPnl, 0),
   };
 }

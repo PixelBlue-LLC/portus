@@ -13,6 +13,11 @@ export interface Holding {
   account?: string;
   /** 由 aggregateBySymbol 填：这只股票分布在哪些账户 */
   accounts?: string[];
+  /**
+   * 不是股票代码（债券、期权合约等，券商导出里只有一段描述）：不拉行情，
+   * 价格固定用导入时的「市值 ÷ 数量」，name 里是券商给的原始描述。
+   */
+  noQuote?: boolean;
 }
 
 /** 行情源返回的一只标的的报价 */
@@ -36,6 +41,8 @@ export interface Position {
   costBasis: number;
   price: number;
   priceSource: 'quote' | 'manual' | 'cost';
+  /** 总成本 = 数量 × 均价（券商叫 Cost Basis） */
+  cost: number;
   marketValue: number;
   /** 当日盈亏（$）；没有涨跌幅数据时为 null */
   dayPnl: number | null;
@@ -51,6 +58,8 @@ export interface Position {
   accounts?: string[];
   high52?: number;
   low52?: number;
+  /** 见 Holding.noQuote */
+  noQuote?: boolean;
 }
 
 export interface PortfolioView {

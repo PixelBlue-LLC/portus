@@ -27,7 +27,7 @@ import { Card, ConcRow, Money, Pct } from '../ui';
 const PALETTE = ['var(--accent)', 'color-mix(in srgb, var(--accent) 65%, var(--card))', 'var(--warn)', 'color-mix(in srgb, var(--muted) 80%, var(--card))', 'color-mix(in srgb, var(--muted) 50%, var(--card))', 'color-mix(in srgb, var(--muted) 30%, var(--card))'];
 
 function allocation(view: PortfolioView) {
-  const alloc = [...view.positions.slice(0, 5).map((p) => ({ label: p.symbol, w: p.weight }))];
+  const alloc = [...view.positions.slice(0, 5).map((p) => ({ label: p.noQuote ? (p.name ?? p.symbol).slice(0, 18) : p.symbol, w: p.weight }))];
   const others = view.positions.slice(5).reduce((sum, p) => sum + p.weight, 0);
   if (others > 0) alloc.push({ label: t('common.other'), w: Math.round(others * 10) / 10 });
   if (view.cash > 0) alloc.push({ label: t('common.cash'), w: Math.round((view.cash / view.totalValue) * 1000) / 10 });
@@ -39,13 +39,101 @@ function priceNote(p: Position): string {
   return p.priceSource === 'manual' ? t('hold.priceImport') : t('hold.priceCost');
 }
 
+/** 表格里的金额：两位小数、不带 $，和券商的持仓表一样 */
+const n2 = (v: number) => v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const signed2 = (v: number) => `${v < 0 ? '−' : '+'}${n2(Math.abs(v))}`;
+const qtyText = (v: number) => v.toLocaleString('en-US', { maximumFractionDigits: 4 });
+/** 债券、期权等没有代码的行显示券商给的描述 */
+const label = (p: Position) => (p.noQuote ? (p.name ?? p.symbol) : p.symbol);
+
+function PnlCell({ v }: { v: number | null }) {
+  if (v == null) return <td className="num muted">—</td>;
+  return <td className={`num ${v < 0 ? 'neg' : v > 0 ? 'pos' : ''}`}>{signed2(v)}</td>;
+}
+
+/** 宽屏的持仓表：列和券商（IBKR 的 Your Holdings）对齐 */
+function HoldingsTable({ positions, cash, showAccounts }: { positions: Position[]; cash: number; showAccounts: boolean }) {
+  const lang = getLang();
+  const sum = (f: (p: Position) => number) => positions.reduce((a, p) => a + f(p), 0);
+  const quoted = positions.filter((p) => !p.noQuote);
+  const dayTotal = quoted.length && quoted.every((p) => p.dayPnl != null) ? sum((p) => p.dayPnl ?? 0) : null;
+  const total = sum((p) => p.marketValue) + cash;
+  return (
+    <div className="htable-wrap">
+      <table className="htable">
+        <thead>
+          <tr>
+            <th scope="col">{t('ht.instrument')}</th>
+            <th scope="col" className="num">{t('ht.position')}</th>
+            <th scope="col" className="num">{t('ht.last')}</th>
+            <th scope="col" className="num">{t('ht.change')}</th>
+            <th scope="col" className="num">{t('ht.costBasis')}</th>
+            <th scope="col" className="num">{t('ht.mv')}</th>
+            <th scope="col" className="num">{t('ht.avg')}</th>
+            <th scope="col" className="num">{t('ht.daily')}</th>
+            <th scope="col" className="num">{t('ht.unrealized')}</th>
+            <th scope="col" className="num">{t('th.weight')}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {positions.map((p) => {
+            const sub = p.noQuote
+              ? t('ht.noQuote')
+              : [nameIn(p.theme, lang), p.priceSource !== 'quote' ? priceNote(p) : '', showAccounts && p.accounts?.length ? p.accounts.map((a) => accountName(a, lang)).join(' + ') : '']
+                  .filter(Boolean)
+                  .join(' · ');
+            return (
+              <tr key={p.symbol}>
+                <th scope="row">
+                  <span className="sym" title={p.noQuote ? label(p) : p.name}>{label(p)}</span>
+                  <span className="sub">{sub}</span>
+                </th>
+                <td className="num">{qtyText(p.qty)}</td>
+                <td className="num">{n2(p.price)}</td>
+                {p.dayPct != null ? <td className={`num ${p.dayPct < 0 ? 'neg' : p.dayPct > 0 ? 'pos' : ''}`}>{signedPct(p.dayPct)}</td> : <td className="num muted">—</td>}
+                <td className="num">{n2(p.cost)}</td>
+                <td className="num">{n2(p.marketValue)}</td>
+                <td className="num">{n2(p.costBasis)}</td>
+                <PnlCell v={p.dayPnl} />
+                <PnlCell v={p.totalPnl} />
+                <td className="num">{p.weight}%</td>
+              </tr>
+            );
+          })}
+        </tbody>
+        <tfoot>
+          {cash > 0 ? (
+            <tr>
+              <th scope="row">{t('common.cash')}</th>
+              <td colSpan={4} />
+              <td className="num">{n2(cash)}</td>
+              <td colSpan={3} />
+              <td className="num">{total ? ((cash / total) * 100).toFixed(1) : '0'}%</td>
+            </tr>
+          ) : null}
+          <tr className="total">
+            <th scope="row">{t('ht.total')}</th>
+            <td colSpan={3} />
+            <td className="num">{n2(sum((p) => p.cost))}</td>
+            <td className="num">{n2(total)}</td>
+            <td />
+            <PnlCell v={dayTotal} />
+            <PnlCell v={sum((p) => p.totalPnl)} />
+            <td />
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  );
+}
+
 function PositionCard({ p, weightLabel, showAccounts }: { p: Position; weightLabel: string; showAccounts: boolean }) {
   const range = p.high52 && p.low52 && p.high52 > p.low52 ? ((p.price - p.low52) / (p.high52 - p.low52)) * 100 : null;
   return (
     <Card>
       <div className="card-head" style={{ alignItems: 'flex-start' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          <span style={{ fontSize: 17, fontWeight: 700 }}>{p.symbol}</span>
+          <span style={{ fontSize: 17, fontWeight: 700, overflowWrap: 'anywhere' }}>{label(p)}</span>
           <span className="label">
             {nameIn(p.theme, getLang())} · {weightLabel} {p.weight}%
             {showAccounts && p.accounts?.length ? ` · ${p.accounts.map((a) => accountName(a, getLang())).join(' + ')}` : ''}
@@ -54,23 +142,29 @@ function PositionCard({ p, weightLabel, showAccounts }: { p: Position; weightLab
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'flex-end' }}>
           <span style={{ fontSize: 17, fontWeight: 700 }}>${num(p.price)}</span>
           <span style={{ fontSize: 13, fontWeight: 600 }}>
-            {p.dayPct != null ? <>{t('common.today')} <Pct v={p.dayPct} /></> : <span className="muted">{priceNote(p)}</span>}
+            {p.dayPct != null ? (
+              <>
+                {t('common.today')} <Pct v={p.dayPct} /> · <Money v={p.dayPnl} digits={2} />
+              </>
+            ) : (
+              <span className="muted">{p.noQuote ? t('ht.noQuote') : priceNote(p)}</span>
+            )}
           </span>
         </div>
       </div>
       <div className="tiles" style={{ gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', fontSize: 13 }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           <span className="label">{t('hold.qtyCost')}</span>
-          <span>{t('hold.sharesAt', { q: num(p.qty), c: num(p.costBasis) })}</span>
+          <span>{t('hold.sharesAt', { q: qtyText(p.qty), c: n2(p.costBasis) })}</span>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           <span className="label">{t('col.mv')}</span>
-          <span>{usd(p.marketValue)}</span>
+          <span>{usd(p.marketValue, 2)}</span>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          <span className="label">{t('common.total')}</span>
+          <span className="label">{t('ht.unrealized')}</span>
           <span style={{ fontWeight: 600 }}>
-            <Money v={p.totalPnl} />
+            <Money v={p.totalPnl} digits={2} />
             {p.totalPct != null ? <span className={p.totalPnl < 0 ? 'neg' : 'pos'}> · {signedPct(p.totalPct, 1)}</span> : null}
           </span>
         </div>
@@ -129,15 +223,15 @@ export function Holdings({ s, d }: { s: AppState; d: Derived }) {
         <div className="tiles" style={{ gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             <span className="label">{t('common.totalValue')}</span>
-            <span className="mid" style={{ fontSize: 19 }}>{usd(view.totalValue)}</span>
+            <span className="mid" style={{ fontSize: 19 }}>{usd(view.totalValue, 2)}</span>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <span className="label">{t('common.today')}</span>
-            <span className="mid" style={{ fontSize: 19 }}><Money v={view.dayPnl} /></span>
+            <span className="label">{t('ht.daily')}</span>
+            <span className="mid" style={{ fontSize: 19 }}><Money v={view.dayPnl} digits={2} /></span>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <span className="label">{t('common.total')}</span>
-            <span className="mid" style={{ fontSize: 19 }}><Money v={view.totalPnl} /></span>
+            <span className="label">{t('ht.unrealized')}</span>
+            <span className="mid" style={{ fontSize: 19 }}><Money v={view.totalPnl} digits={2} /></span>
           </div>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -161,8 +255,32 @@ export function Holdings({ s, d }: { s: AppState; d: Derived }) {
         </div>
       </Card>
 
+      <div className="desktop-only col">
+        {split ? (
+          d.byAccount.map(({ name, view: av }) => (
+            <Card key={name}>
+              <div className="acct-head">
+                <span style={{ fontWeight: 700 }}>{accountName(name, getLang())}</span>
+                <span className="label">
+                  {t('hold.acctLine', {
+                    v: usd(av.totalValue, 2),
+                    p: view.totalValue ? ((av.totalValue / view.totalValue) * 100).toFixed(1) : '0',
+                    c: usd(av.cash, 2),
+                  })}
+                </span>
+              </div>
+              <HoldingsTable positions={av.positions} cash={av.cash} showAccounts={false} />
+            </Card>
+          ))
+        ) : (
+          <Card>
+            <HoldingsTable positions={view.positions} cash={view.cash} showAccounts={multi} />
+          </Card>
+        )}
+      </div>
+
       <div className="grid2">
-        <div className="col">
+        <div className="col mobile-only">
           {split
             ? d.byAccount.map(({ name, view: av }) => (
                 <div key={name} className="col">
@@ -199,6 +317,10 @@ export function Holdings({ s, d }: { s: AppState; d: Derived }) {
               {t('hold.concNote')}
             </span>
           </Card>
+          <div className="notice">
+            {t('ht.note')}
+            {view.positions.some((p) => p.noQuote) ? <> {t('ht.noteNoQuote')}</> : null}
+          </div>
         </div>
       </div>
     </>
@@ -211,7 +333,7 @@ export function Holdings({ s, d }: { s: AppState; d: Derived }) {
  * 一行持仓。成本可以按每股填，也可以按总成本填（券商导出的 Cost Basis 一般是总成本）；
  * basis 记住用户最后改的是哪一个，保存时以它为准，避免来回换算丢精度。
  */
-type Row = { symbol: string; qty: string; cost: string; total: string; basis: 'cost' | 'total'; account: string; manualPrice?: number; name?: string };
+type Row = { symbol: string; qty: string; cost: string; total: string; basis: 'cost' | 'total'; account: string; manualPrice?: number; name?: string; noQuote?: boolean };
 const fmt2 = (v: number) => (Number.isFinite(v) && v ? String(Math.round(v * 100) / 100) : '');
 const toRow = (h: Holding): Row => ({
   symbol: h.symbol,
@@ -222,6 +344,7 @@ const toRow = (h: Holding): Row => ({
   account: accountOf(h),
   ...(h.manualPrice ? { manualPrice: h.manualPrice } : {}),
   ...(h.name ? { name: h.name } : {}),
+  ...(h.noQuote ? { noQuote: true } : {}),
 });
 const blank = (account: string): Row => ({ symbol: '', qty: '', cost: '', total: '', basis: 'cost', account });
 
@@ -235,12 +358,13 @@ function rowsToHoldings(rs: Row[]): Holding[] {
   return rs
     .filter((r) => r.symbol.trim() && Number(r.qty) > 0)
     .map((r) => ({
-      symbol: r.symbol.trim().toUpperCase(),
+      symbol: r.noQuote ? r.symbol.trim() : r.symbol.trim().toUpperCase(),
       qty: Number(r.qty),
       costBasis: rowCostPerShare(r),
       account: r.account,
       ...(r.manualPrice ? { manualPrice: r.manualPrice } : {}),
       ...(r.name ? { name: r.name } : {}),
+      ...(r.noQuote ? { noQuote: true } : {}),
     }));
 }
 

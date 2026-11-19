@@ -15,3 +15,4 @@ export * from './etf';
 export * from './correlation';
 export * from './plans';
 export * from './optionImport';
+export * from './market';

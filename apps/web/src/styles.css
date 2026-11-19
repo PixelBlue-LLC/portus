@@ -210,6 +210,7 @@ textarea.input { padding: 10px 12px; min-height: 96px; resize: vertical; line-he
 .bubble.ai { align-self: flex-start; background: var(--card); border: 1px solid var(--line); border-bottom-left-radius: 4px; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 @media (min-width: 900px) { .mobile-only { display: none; } }
+@media (max-width: 899px) { .desktop-only { display: none; } }
 
 /* 账户 */
 .seg { display: inline-flex; align-self: flex-start; border: 1px solid var(--line); border-radius: 12px; padding: 3px; gap: 3px; background: var(--card); }
@@ -288,3 +289,39 @@ a:focus-visible, button:focus-visible, select:focus-visible, .acct-chip:focus-vi
 }
 .metrics { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
 .metrics .mid { overflow-wrap: anywhere; }
+
+/* ---------- 顶栏：交易时段、更新时间、刷新、语言 ---------- */
+.topbar { position: relative; display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 6px 8px; padding: 0 6px; font-size: 13px; color: var(--muted); }
+.topbar .btn.small { min-height: 34px; }
+.mkt-state { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.mkt-state i { width: 8px; height: 8px; border-radius: 4px; background: var(--muted); opacity: 0.6; }
+.mkt-state.open i { background: #22a06b; opacity: 1; }
+.mkt-state.pre i, .mkt-state.post i { background: var(--warn); opacity: 1; }
+.topbar-time { background: none; border: 1px solid transparent; border-radius: 10px; min-height: 34px; padding: 0 8px; color: var(--muted); font: inherit; cursor: pointer; font-variant-numeric: tabular-nums; text-align: right; }
+.topbar-time:hover, .topbar-time[aria-expanded='true'] { border-color: var(--line); background: var(--card); }
+.topbar-time b { color: var(--ink); font-weight: 600; }
+.topbar-time .caret { margin-left: 4px; font-size: 10px; }
+.top-panel { position: absolute; top: calc(100% + 6px); right: 6px; z-index: 20; width: min(340px, calc(100vw - 32px)); display: flex; flex-direction: column; gap: 12px; padding: 14px; background: var(--card); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 8px 24px rgb(0 0 0 / 0.12); color: var(--body); text-align: left; }
+.top-panel .label b { color: var(--ink); font-weight: 600; }
+.topbar .zs, .topbar .narrow { display: none; }
+@media (max-width: 640px) {
+  .topbar { flex-wrap: nowrap; gap: 4px; }
+  .topbar .wide, .topbar .zl { display: none; }
+  .topbar .zs, .topbar .narrow { display: inline; }
+  .topbar-time { padding: 0 4px; margin-right: auto; white-space: nowrap; }
+  .topbar .btn.small { min-width: 40px; padding: 0 10px; }
+  .top-panel .zl { display: inline; }
+  .top-panel .zs { display: none; }
+}
+
+/* ---------- 持仓表（宽屏） ---------- */
+.htable-wrap { overflow-x: auto; margin: 0 -4px; }
+.htable { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
+.htable th, .htable td { padding: 10px 8px; border-bottom: 1px solid var(--line2); text-align: left; white-space: nowrap; }
+.htable thead th { font-size: 12px; font-weight: 600; color: var(--muted); border-bottom-color: var(--line); }
+.htable .num { text-align: right; }
+.htable tbody th { font-weight: 400; max-width: 260px; }
+.htable .sym { display: block; font-weight: 700; color: var(--ink); overflow: hidden; text-overflow: ellipsis; }
+.htable .sub { display: block; font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+.htable tfoot th { font-weight: 600; }
+.htable tfoot tr.total th, .htable tfoot tr.total td { font-weight: 700; border-bottom: none; border-top: 1px solid var(--line); }

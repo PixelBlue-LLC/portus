@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { APP_NAME } from './brand';
 import { useDerived } from './derived';
-import { timeLabel } from './format';
 import { Ask } from './pages/Ask';
 import { Holdings, HoldingsEditor } from './pages/Holdings';
 import { Market } from './pages/Market';
@@ -12,7 +11,10 @@ import { Risk } from './pages/Risk';
 import { Settings } from './pages/Settings';
 import { Today } from './pages/Today';
 import { resolveLang, setLang, t, type MsgKey } from './i18n';
-import { exitSample, updateSettings, useAppState } from './store';
+import { exitSample, getState, useAppState } from './store';
+import { TopBar } from './TopBar';
+import { autoRefresh } from './actions';
+import { shouldAutoRefresh } from 'portus-core';
 
 const TABS: ReadonlyArray<{ path: string; label: MsgKey }> = [
   { path: '/', label: 'nav.today' },
@@ -24,6 +26,32 @@ const TABS: ReadonlyArray<{ path: string; label: MsgKey }> = [
   { path: '/options', label: 'nav.options' },
   { path: '/ask', label: 'nav.ask' },
 ];
+
+/** 上次尝试自动刷新的时间：出错（比如 key 失效）时也不会每 30 秒重试一次 */
+let lastAttempt = 0;
+
+/** 盘中按设置的间隔自动刷新；页面在后台时不刷，回到前台时检查一次 */
+function useAutoRefresh() {
+  useEffect(() => {
+    const tick = () => {
+      const st = getState();
+      const every = st.settings.autoRefreshMin;
+      if (!st.settings.finnhubKey || st.loading || every <= 0 || document.visibilityState !== 'visible') return;
+      if (Date.now() - lastAttempt < Math.max(1, every) * 60000 * 0.9) return;
+      const last = st.market.fetchedAt ? new Date(st.market.fetchedAt) : null;
+      if (!shouldAutoRefresh(new Date(), last, every)) return;
+      lastAttempt = Date.now();
+      void autoRefresh();
+    };
+    tick();
+    const id = setInterval(tick, 30000);
+    document.addEventListener('visibilitychange', tick);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', tick);
+    };
+  }, []);
+}
 
 function useRoute(): string {
   const read = () => location.hash.replace(/^#/, '') || '/';
@@ -45,6 +73,7 @@ export function App() {
   setLang(lang);
   const d = useDerived(s);
   const route = useRoute();
+  useAutoRefresh();
 
   useEffect(() => {
     const root = document.documentElement;
@@ -82,17 +111,10 @@ export function App() {
         <a href="#/settings" className={`navlink ${active('/settings') ? 'active' : ''}`}>
           {t('nav.settings')}
         </a>
-        <span className="foot">
-          {s.market.fetchedAt ? t('foot.quotesAt', { t: timeLabel(s.market.fetchedAt) }) : t('foot.noQuotes')}
-          <br />
-          {t('foot.local')}
-          <br />
-          <button className="linkbtn" lang={lang === 'zh' ? 'en' : 'zh-CN'} onClick={() => updateSettings({ lang: lang === 'zh' ? 'en' : 'zh' })}>
-            {t('foot.switchLang')}
-          </button>
-        </span>
+        <span className="foot">{t('foot.local')}</span>
       </nav>
       <main className="main" id="main" tabIndex={-1}>
+        <TopBar s={s} />
         {s.isSample && route !== '/holdings/edit' ? (
           <div className="sample-bar" role="status">
             <span>{t('sample.viewing')}</span>

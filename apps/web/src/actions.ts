@@ -1,17 +1,26 @@
 import { alertSymbols, attributionPrompt, askPrompt, TRANSLATE_SYSTEM_PROMPT } from 'portus-core';
 import { askClaude } from './data/anthropic';
-import { fetchMarket } from './data/finnhub';
+import { fetchMarket, fetchQuotes } from './data/finnhub';
 import { getLang, t } from './i18n';
 import { getState, setState } from './store';
 
+/** 要报价的代码：持仓（不含债券、期权等没有代码的行）+ 提醒、计划、相关性候选里的代码 */
+function quoteSymbols(s: ReturnType<typeof getState>): { held: string[]; extra: string[] } {
+  return {
+    held: s.holdings.filter((h) => !h.noQuote).map((h) => h.symbol),
+    extra: [...alertSymbols(s.alerts), ...s.plans.filter((p) => !p.archived).map((p) => p.symbol), ...s.candidates],
+  };
+}
+
+/** 完整刷新：报价、52 周区间、新闻、财报、行业。手动点「刷新」、保存持仓、每小时第一次自动刷新时用 */
 export async function refreshMarket(): Promise<void> {
   const s = getState();
   if (!s.settings.finnhubKey || s.loading) return;
   setState({ loading: true });
   try {
-    // 提醒、计划、相关性候选里的代码也要报价
-    const extra = [...alertSymbols(s.alerts), ...s.plans.filter((p) => !p.archived).map((p) => p.symbol), ...s.candidates];
-    const r = await fetchMarket(s.holdings.map((h) => h.symbol), s.settings.finnhubKey, s.market.industries ?? {}, extra);
+    const { held, extra } = quoteSymbols(s);
+    const r = await fetchMarket(held, s.settings.finnhubKey, s.market.industries ?? {}, extra);
+    const now = new Date().toISOString();
     setState({
       market: {
         quotes: r.quotes,
@@ -21,7 +30,8 @@ export async function refreshMarket(): Promise<void> {
         earningsHour: r.earningsHour,
         industries: { ...s.market.industries, ...r.industries },
         errors: r.errors,
-        fetchedAt: new Date().toISOString(),
+        fetchedAt: now,
+        fullAt: now,
       },
       attribution: undefined,
     });
@@ -30,6 +40,36 @@ export async function refreshMarket(): Promise<void> {
   } finally {
     setState({ loading: false });
   }
+}
+
+/** 只更新报价（自动刷新用）。52 周高低沿用上次完整刷新的值 */
+export async function refreshQuotes(): Promise<void> {
+  const s = getState();
+  if (!s.settings.finnhubKey || s.loading) return;
+  setState({ loading: true });
+  try {
+    const { held, extra } = quoteSymbols(s);
+    const r = await fetchQuotes([...held, ...extra], s.settings.finnhubKey);
+    setState((st) => {
+      const quotes = { ...st.market.quotes };
+      for (const [sym, q] of Object.entries(r.quotes)) quotes[sym] = { ...q, high52: quotes[sym]?.high52, low52: quotes[sym]?.low52 };
+      return {
+        // AI 解读不作废：几分钟的价格变化不值得让用户重新花一次 AI 调用，页面上会标出解读的时间
+        market: { ...st.market, quotes, sectors: r.sectors.length ? r.sectors : st.market.sectors, errors: r.errors, fetchedAt: new Date().toISOString() },
+      };
+    });
+  } catch (e) {
+    setState((st) => ({ market: { ...st.market, errors: [e instanceof Error ? e.message : String(e)] } }));
+  } finally {
+    setState({ loading: false });
+  }
+}
+
+/** 自动刷新：距上次完整刷新超过一小时就做完整刷新，否则只拉报价 */
+export function autoRefresh(): Promise<void> {
+  const fullAt = getState().market.fullAt;
+  const old = !fullAt || Date.now() - Date.parse(fullAt) > 60 * 60000;
+  return old ? refreshMarket() : refreshQuotes();
 }
 
 export async function runAttribution(facts: string): Promise<void> {

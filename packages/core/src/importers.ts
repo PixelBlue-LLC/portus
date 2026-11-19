@@ -1,6 +1,7 @@
 /**
  * 持仓导入：券商导出的 CSV，或者每行「代码 数量 成本」的纯文本。
  * 不同券商列名不同，这里按别名找列；成本列分「每股均价」和「总成本」两种，总成本会除以数量。
+ * 没有股票代码的行（债券、期权合约）也导入，标成 noQuote，价格固定用导入时的市值。
  */
 import type { Holding } from './types';
 import type { Lang } from './lang';
@@ -109,7 +110,7 @@ export function parseHoldingsCsv(text: string, lang: Lang = 'zh'): ImportResult 
   const cSym = findCol(headers, SYMBOL_KEYS);
   const cQty = findCol(headers, QTY_KEYS);
   const cAvg = findCol(headers, AVG_COST_KEYS);
-  const cTotal = cAvg >= 0 ? -1 : findCol(headers, TOTAL_COST_KEYS);
+  const cTotal = findCol(headers, TOTAL_COST_KEYS);
   const cPrice = findCol(headers, PRICE_KEYS);
   const cMv = findCol(headers, MV_KEYS);
   const cName = findCol(headers, NAME_KEYS);
@@ -126,18 +127,35 @@ export function parseHoldingsCsv(text: string, lang: Lang = 'zh'): ImportResult 
       continue;
     }
     const qty = parseNumber(cells[cQty]);
-    if (!SYMBOL_RE.test(sym) || qty == null || qty <= 0) {
+    const totalCost = cTotal >= 0 ? parseNumber(cells[cTotal]) : null;
+    const price = cPrice >= 0 ? parseNumber(cells[cPrice]) : null;
+    const name = cName >= 0 ? (cells[cName] ?? '').trim() : '';
+    if (!SYMBOL_RE.test(sym)) {
+      // 债券、期权合约等：只有一段描述，没有股票代码。用市值 ÷ 数量当价格（债券报价是每 100 面值、
+      // 期权是每股，直接乘数量会差 10 倍或 100 倍），成本用总成本 ÷ 数量，两边单位一致
+      const mv = cMv >= 0 ? parseNumber(cells[cMv]) : null;
+      const unit = mv != null && qty ? mv / qty : price;
+      if (rawSym && !/total/i.test(rawSym) && qty != null && qty > 0 && unit != null && unit > 0) {
+        const avg = cAvg >= 0 ? parseNumber(cells[cAvg]) : null;
+        const unitCost = totalCost != null && mv != null ? totalCost / qty : mv == null ? avg : null;
+        holdings.push({
+          symbol: rawSym.replace(/\s+/g, ' ').slice(0, 40),
+          name: name && name !== '--' && name !== rawSym ? `${rawSym} · ${name}` : rawSym,
+          qty,
+          costBasis: unitCost != null && unitCost > 0 ? Math.round(unitCost * 10000) / 10000 : unit,
+          manualPrice: Math.round(unit * 10000) / 10000,
+          noQuote: true,
+        });
+      } else if (rawSym && !/total/i.test(rawSym)) skipped.push(rawSym);
+      continue;
+    }
+    if (qty == null || qty <= 0) {
       if (rawSym && !/total/i.test(rawSym)) skipped.push(rawSym);
       continue;
     }
     let cost: number | null = null;
     if (cAvg >= 0) cost = parseNumber(cells[cAvg]);
-    else if (cTotal >= 0) {
-      const t = parseNumber(cells[cTotal]);
-      cost = t != null ? t / qty : null;
-    }
-    const price = cPrice >= 0 ? parseNumber(cells[cPrice]) : null;
-    const name = cName >= 0 ? (cells[cName] ?? '').trim() : '';
+    if (cost == null && totalCost != null) cost = totalCost / qty;
     holdings.push({
       symbol: sym,
       qty,

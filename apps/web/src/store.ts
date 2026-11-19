@@ -19,6 +19,12 @@ export interface Settings {
   lang: LangPref;
   /** Twelve Data 的 key，用来拉日线算相关性 */
   twelveDataKey: string;
+  /** 顶栏主时区（IANA 名）；空串 = 跟随浏览器 */
+  tzPrimary: string;
+  /** 顶栏副时区；空串 = 不显示 */
+  tzSecondary: string;
+  /** 盘中自动刷新行情的间隔（分钟），0 = 不自动刷新 */
+  autoRefreshMin: number;
 }
 
 export interface MarketCache {
@@ -31,7 +37,10 @@ export interface MarketCache {
   industries: Record<string, string>;
   /** 代码 → 财报时段 bmo / amc / dmh */
   earningsHour?: Record<string, string>;
+  /** 最近一次拉到报价的时间（顶栏显示这个） */
   fetchedAt?: string;
+  /** 最近一次完整刷新（含新闻、财报、行业）的时间；自动刷新平时只拉报价 */
+  fullAt?: string;
   errors: string[];
 }
 
@@ -121,6 +130,9 @@ export const DEFAULT_SETTINGS: Settings = {
   accountView: 'merged',
   lang: 'auto',
   twelveDataKey: '',
+  tzPrimary: '',
+  tzSecondary: 'America/New_York',
+  autoRefreshMin: 5,
 };
 
 const EMPTY_MARKET: MarketCache = { quotes: {}, sectors: [], news: [], earnings: {}, industries: {}, errors: [] };
